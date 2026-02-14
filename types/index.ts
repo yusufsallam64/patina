@@ -128,13 +128,7 @@ export interface StyleTransferRequest {
 }
 
 export interface StyleTransferResponse {
-  jobId: string;
-}
-
-export interface StyleTransferStatusResponse {
-  status: "pending" | "processing" | "done" | "error";
-  imageUrl?: string;
-  error?: string;
+  imageUrl: string;
 }
 
 export interface GenerateUIRequest {

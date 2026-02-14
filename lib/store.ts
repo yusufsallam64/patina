@@ -17,6 +17,22 @@ import type {
   SuggestedReference,
 } from "@/types";
 
+// ─── Board Types ────────────────────────────────────────────────
+
+export interface BoardMeta {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface BoardData {
+  nodes: PatinaNode[];
+  edges: PatinaEdge[];
+  vibeCache: Record<string, VibeContribution>;
+  compositeVibe: VibeProfile | null;
+}
+
 // ─── Store Interface ─────────────────────────────────────────────
 
 interface PatinaStore {
@@ -52,9 +68,15 @@ interface PatinaStore {
   mode: "smart" | "power";
   toggleMode: () => void;
 
-  // Persistence
-  saveBoard: () => string;
-  loadBoard: (data: string) => void;
+  // Multi-board
+  currentBoardId: string;
+  boards: BoardMeta[];
+  createBoard: (name?: string) => string;
+  switchBoard: (id: string) => void;
+  deleteBoard: (id: string) => void;
+  renameBoard: (id: string, name: string) => void;
+  saveCurrentBoard: () => void;
+  loadBoardList: () => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -64,55 +86,56 @@ function generateNodeId(): string {
   return `node-${Date.now()}-${++nodeIdCounter}`;
 }
 
+function generateBoardId(): string {
+  return `board-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const BOARDS_INDEX_KEY = "patina-boards-index";
+const boardDataKey = (id: string) => `patina-board-${id}`;
+
+function saveBoardData(id: string, data: BoardData) {
+  try {
+    localStorage.setItem(boardDataKey(id), JSON.stringify(data));
+  } catch (e) {
+    console.error("Failed to save board data:", e);
+  }
+}
+
+function loadBoardData(id: string): BoardData | null {
+  try {
+    const raw = localStorage.getItem(boardDataKey(id));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveBoardsIndex(boards: BoardMeta[]) {
+  try {
+    localStorage.setItem(BOARDS_INDEX_KEY, JSON.stringify(boards));
+  } catch (e) {
+    console.error("Failed to save boards index:", e);
+  }
+}
+
+function loadBoardsIndex(): BoardMeta[] {
+  try {
+    const raw = localStorage.getItem(BOARDS_INDEX_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
 // ─── Store ───────────────────────────────────────────────────────
 
-// Demo seed nodes — remove before production
-const DEMO_NODES: PatinaNode[] = [
-  {
-    id: "demo-img-1",
-    type: "image",
-    position: { x: 80, y: 100 },
-    data: {
-      type: "image",
-      content: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=480&q=80",
-      title: "Yosemite Valley",
-    },
-  },
-  {
-    id: "demo-img-2",
-    type: "image",
-    position: { x: 400, y: 60 },
-    data: {
-      type: "image",
-      content: "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=480&q=80",
-      title: "Mountain Stars",
-    },
-  },
-  {
-    id: "demo-text-1",
-    type: "text",
-    position: { x: 120, y: 380 },
-    data: {
-      type: "text",
-      content:
-        "Warm amber light filtering through fog, the kind of quiet that feels heavy — like the world is holding its breath.",
-      title: "mood reference",
-    },
-  },
-  {
-    id: "demo-suggested-1",
-    type: "suggested",
-    position: { x: 460, y: 340 },
-    data: {
-      type: "suggested",
-      content: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=360&q=80",
-    },
-  },
-];
+const DEFAULT_BOARD_ID = "default";
 
 export const usePatinaStore = create<PatinaStore>((set, get) => ({
   // ── Nodes & Edges ──
-  nodes: DEMO_NODES,
+  nodes: [],
   edges: [],
 
   onNodesChange: (changes) => {
@@ -145,7 +168,6 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
       nodes: get().nodes.filter((n) => n.id !== id),
       edges: get().edges.filter((e) => e.source !== id && e.target !== id),
     });
-    // Clean up vibe cache
     const cache = { ...get().vibeCache };
     delete cache[id];
     set({ vibeCache: cache });
@@ -188,18 +210,15 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
     const suggestion = get().suggestedNodes.find((s) => s.id === id);
     if (!suggestion) return;
 
-    // Add as a real image node
-    const nodeId = get().addNode(
+    get().addNode(
       {
         type: "image",
         content: suggestion.imageUrl,
         metadata: { originUrl: suggestion.originUrl, fromDiscovery: true },
       },
-      // Place near the center of the viewport — caller should provide better position
       { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 }
     );
 
-    // Remove from suggestions
     set({
       suggestedNodes: get().suggestedNodes.filter((s) => s.id !== id),
     });
@@ -222,25 +241,120 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
     set({ mode: get().mode === "smart" ? "power" : "smart" });
   },
 
-  // ── Persistence ──
-  saveBoard: () => {
-    const { nodes, edges, vibeCache, compositeVibe } = get();
-    const data = JSON.stringify({ nodes, edges, vibeCache, compositeVibe });
-    localStorage.setItem("patina-board", data);
-    return data;
+  // ── Multi-board ──
+  currentBoardId: DEFAULT_BOARD_ID,
+  boards: [],
+
+  createBoard: (name) => {
+    const { saveCurrentBoard } = get();
+    saveCurrentBoard();
+
+    const id = generateBoardId();
+    const boardName = name || `Board ${get().boards.length + 1}`;
+    const now = Date.now();
+
+    const meta: BoardMeta = { id, name: boardName, createdAt: now, updatedAt: now };
+    const updatedBoards = [...get().boards, meta];
+
+    set({
+      currentBoardId: id,
+      boards: updatedBoards,
+      nodes: [],
+      edges: [],
+      vibeCache: {},
+      compositeVibe: null,
+      suggestedNodes: [],
+    });
+
+    saveBoardsIndex(updatedBoards);
+    saveBoardData(id, { nodes: [], edges: [], vibeCache: {}, compositeVibe: null });
+
+    return id;
   },
 
-  loadBoard: (data) => {
-    try {
-      const parsed = JSON.parse(data);
-      set({
-        nodes: parsed.nodes || [],
-        edges: parsed.edges || [],
-        vibeCache: parsed.vibeCache || {},
-        compositeVibe: parsed.compositeVibe || null,
-      });
-    } catch (e) {
-      console.error("Failed to load board:", e);
+  switchBoard: (id) => {
+    if (id === get().currentBoardId) return;
+
+    // Save current board first
+    get().saveCurrentBoard();
+
+    // Load target board
+    const data = loadBoardData(id);
+    set({
+      currentBoardId: id,
+      nodes: data?.nodes || [],
+      edges: data?.edges || [],
+      vibeCache: data?.vibeCache || {},
+      compositeVibe: data?.compositeVibe || null,
+      suggestedNodes: [],
+      isExtracting: false,
+    });
+  },
+
+  deleteBoard: (id) => {
+    const { boards, currentBoardId } = get();
+    if (boards.length <= 1) return; // Don't delete the last board
+
+    const updatedBoards = boards.filter((b) => b.id !== id);
+    set({ boards: updatedBoards });
+    saveBoardsIndex(updatedBoards);
+
+    try { localStorage.removeItem(boardDataKey(id)); } catch {}
+
+    // If we deleted the current board, switch to the first remaining one
+    if (id === currentBoardId && updatedBoards.length > 0) {
+      get().switchBoard(updatedBoards[0].id);
     }
+  },
+
+  renameBoard: (id, name) => {
+    const updatedBoards = get().boards.map((b) =>
+      b.id === id ? { ...b, name, updatedAt: Date.now() } : b
+    );
+    set({ boards: updatedBoards });
+    saveBoardsIndex(updatedBoards);
+  },
+
+  saveCurrentBoard: () => {
+    const { currentBoardId, nodes, edges, vibeCache, compositeVibe, boards } = get();
+    saveBoardData(currentBoardId, { nodes, edges, vibeCache, compositeVibe });
+
+    // Update timestamp
+    const updatedBoards = boards.map((b) =>
+      b.id === currentBoardId ? { ...b, updatedAt: Date.now() } : b
+    );
+    set({ boards: updatedBoards });
+    saveBoardsIndex(updatedBoards);
+  },
+
+  loadBoardList: () => {
+    let boards = loadBoardsIndex();
+
+    if (boards.length === 0) {
+      // First time — create a default board
+      const now = Date.now();
+      const defaultMeta: BoardMeta = {
+        id: DEFAULT_BOARD_ID,
+        name: "My First Board",
+        createdAt: now,
+        updatedAt: now,
+      };
+      boards = [defaultMeta];
+      saveBoardsIndex(boards);
+    }
+
+    // Load the most recently updated board
+    const sorted = [...boards].sort((a, b) => b.updatedAt - a.updatedAt);
+    const activeBoardId = sorted[0].id;
+    const data = loadBoardData(activeBoardId);
+
+    set({
+      boards,
+      currentBoardId: activeBoardId,
+      nodes: data?.nodes || [],
+      edges: data?.edges || [],
+      vibeCache: data?.vibeCache || {},
+      compositeVibe: data?.compositeVibe || null,
+    });
   },
 }));

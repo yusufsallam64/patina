@@ -5,8 +5,9 @@ import type { PatinaNodeType } from "@/types";
  * Uses content type detection — Claude Vision is the fallback for ambiguous cases.
  */
 
-const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|bmp|avif)$/i;
+const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|bmp|avif)(\?.*)?$/i;
 const URL_PATTERN = /^https?:\/\//i;
+const IMAGE_HOSTS = /images\.unsplash\.com|i\.imgur\.com|pbs\.twimg\.com|cdn\.dribbble\.com|mir-s3-cdn-cf\.behance\.net/i;
 
 export function classifyContent(
   raw: string | File
@@ -27,19 +28,20 @@ export function classifyContent(
   if (typeof raw === "string") {
     const trimmed = raw.trim();
 
-    // Check for image URL
-    if (URL_PATTERN.test(trimmed) && IMAGE_EXTENSIONS.test(trimmed)) {
-      return { type: "image", content: trimmed };
-    }
-
-    // Check for general URL
-    if (URL_PATTERN.test(trimmed)) {
-      return { type: "url", content: trimmed };
-    }
-
     // Check for base64 image data
     if (trimmed.startsWith("data:image/")) {
       return { type: "image", content: trimmed };
+    }
+
+    if (URL_PATTERN.test(trimmed)) {
+      // Check for image URL by extension (handles query params)
+      // or by known image hosting domains
+      if (IMAGE_EXTENSIONS.test(trimmed) || IMAGE_HOSTS.test(trimmed)) {
+        return { type: "image", content: trimmed };
+      }
+
+      // General URL
+      return { type: "url", content: trimmed };
     }
 
     // Default: text
