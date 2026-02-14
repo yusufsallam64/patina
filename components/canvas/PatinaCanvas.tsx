@@ -19,6 +19,7 @@ import { SuggestedNode } from "@/components/nodes/SuggestedNode";
 import { CodeNode } from "@/components/nodes/CodeNode";
 import { MusicNode } from "@/components/nodes/MusicNode";
 import { ContextMenu } from "@/components/canvas/ContextMenu";
+import { EmptyCanvas } from "@/components/canvas/EmptyCanvas";
 import type { PatinaNodeType } from "@/types";
 
 const nodeTypes: NodeTypes = {
@@ -64,6 +65,11 @@ function PatinaCanvasInner() {
   const onContextMenu = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
     setContextMenu({ x: event.clientX, y: event.clientY });
+  }, []);
+
+  // Close context menu on any canvas click
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
   }, []);
 
   // Shared logic: add a node from classified content
@@ -116,7 +122,10 @@ function PatinaCanvasInner() {
       } else if (classified.type === "url") {
         // Parse the URL to get metadata
         const meta = await parseUrl(classified.content);
-        const ogIsImage = meta.ogImage && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(meta.ogImage);
+        const ogIsImage =
+          meta.ogImage &&
+          /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(meta.ogImage) &&
+          meta.ogImage.startsWith("https://"); // Only use HTTPS og:images
         if (ogIsImage && meta.ogImage) {
           addContentNode("image", meta.ogImage, position, { title: meta.title });
         } else {
@@ -224,6 +233,9 @@ function PatinaCanvasInner() {
         onConnect={onConnect}
         onDragOver={onDragOver}
         onDrop={onDrop}
+        onPaneClick={closeContextMenu}
+        onNodeClick={closeContextMenu}
+        onMoveStart={closeContextMenu}
         nodeTypes={nodeTypes}
         fitView
         proOptions={{ hideAttribution: true }}
@@ -241,6 +253,8 @@ function PatinaCanvasInner() {
         position={contextMenu}
         onClose={() => setContextMenu(null)}
       />
+
+      <EmptyCanvas />
     </div>
   );
 }

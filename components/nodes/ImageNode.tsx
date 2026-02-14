@@ -2,46 +2,50 @@
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { PatinaNode } from "@/types";
+import { DismissButton } from "./DismissButton";
 
-export function ImageNode({ data, selected }: NodeProps<PatinaNode>) {
+export function ImageNode({ id, data, selected }: NodeProps<PatinaNode>) {
   return (
     <div
-      className={`group relative rounded-xl overflow-hidden border-2 transition-all duration-200 ${
-        selected
-          ? "border-accent shadow-lg shadow-accent/20"
-          : "border-border-subtle hover:border-border-subtle/80"
-      }`}
+      className="patina-node group overflow-hidden"
+      data-selected={selected}
       style={{ width: 240 }}
     >
+      <DismissButton nodeId={id} />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={data.content}
         alt={data.title || "Reference image"}
-        className="w-full h-auto block"
+        className="w-full h-auto block rounded-[13px]"
         draggable={false}
       />
 
-      {/* Vibe extraction indicator */}
+      {/* Vibe extracted indicator — soft glow dot */}
       {data.vibeContribution && (
-        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent animate-pulse" />
+        <div
+          className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-accent"
+          style={{ animation: "soft-pulse 2.5s ease-in-out infinite" }}
+        />
       )}
 
       {/* Title overlay on hover */}
       {data.title && (
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3 opacity-0 group-hover:opacity-100 transition-opacity">
-          <p className="text-xs text-white truncate">{data.title}</p>
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 pt-8 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <p className="text-[11px] text-white/90 font-medium truncate tracking-wide">
+            {data.title}
+          </p>
         </div>
       )}
 
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-2.5 !h-2.5 !bg-accent !border-2 !border-surface"
+        className="!w-[7px] !h-[7px] !bg-accent !border-2 !border-surface"
       />
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-2.5 !h-2.5 !bg-accent !border-2 !border-surface"
+        className="!w-[7px] !h-[7px] !bg-accent !border-2 !border-surface"
       />
     </div>
   );

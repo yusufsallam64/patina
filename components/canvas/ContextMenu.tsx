@@ -147,6 +147,40 @@ export function ContextMenu({ position, onClose }: ContextMenuProps) {
     }
   }, [compositeVibe, nodes, position, screenToFlowPosition, addNode, onClose]);
 
+  const handleGenerateImage = useCallback(async () => {
+    if (!compositeVibe || !position) return;
+
+    setLoading("image");
+    try {
+      const res = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vibe: compositeVibe }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Image generation failed");
+      }
+
+      const data = await res.json();
+      const flowPos = screenToFlowPosition({ x: position.x + 40, y: position.y + 40 });
+      addNode(
+        {
+          type: "image",
+          content: data.imageUrl,
+          title: "Generated Image",
+        },
+        flowPos
+      );
+    } catch (err) {
+      console.error("Generate image error:", err);
+    } finally {
+      setLoading(null);
+      onClose();
+    }
+  }, [compositeVibe, position, screenToFlowPosition, addNode, onClose]);
+
   const handleGenerateMusic = useCallback(async () => {
     if (!compositeVibe || !position) return;
 
@@ -210,57 +244,103 @@ export function ContextMenu({ position, onClose }: ContextMenuProps) {
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-surface border border-border-subtle rounded-xl shadow-2xl shadow-black/40 py-1.5 min-w-[200px]"
-      style={{ left: position.x, top: position.y }}
+      className="fixed z-[100] rounded-xl py-1.5 min-w-[210px] border border-border-subtle"
+      data-context-menu
+      style={{
+        left: position.x,
+        top: position.y,
+        animation: "node-appear 0.18s cubic-bezier(0.16, 1, 0.3, 1) both",
+        background: "rgba(17, 17, 21, 0.97)",
+        backdropFilter: "blur(12px)",
+        boxShadow: "0 8px 32px -4px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03) inset",
+      }}
     >
-      <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted border-b border-border-subtle mb-1">
+      <div className="px-3 py-1.5 text-[9px] font-medium uppercase tracking-[0.14em] text-muted/60 border-b border-border-subtle mb-1">
         Actions
       </div>
 
-      <button
+      <MenuButton
         onClick={handleGenerateUI}
         disabled={!hasVibe || loading === "ui"}
-        className="w-full text-left px-3 py-2 text-sm hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
-      >
-        <span className="w-5 text-center text-accent">
-          {loading === "ui" ? "⟳" : "◈"}
-        </span>
-        <span>{loading === "ui" ? "Generating..." : "Generate UI"}</span>
-        {!hasVibe && <span className="ml-auto text-[10px] text-muted">needs vibe</span>}
-      </button>
+        icon={loading === "ui" ? "⟳" : "◈"}
+        label={loading === "ui" ? "Generating..." : "Generate UI"}
+        hint={!hasVibe ? "needs vibe" : undefined}
+        spinning={loading === "ui"}
+      />
 
-      <button
+      <MenuButton
+        onClick={handleGenerateImage}
+        disabled={!hasVibe || loading === "image"}
+        icon={loading === "image" ? "⟳" : "▣"}
+        label={loading === "image" ? "Generating..." : "Generate Image"}
+        hint={!hasVibe ? "needs vibe" : undefined}
+        spinning={loading === "image"}
+      />
+
+      <MenuButton
         onClick={handleStyleTransfer}
         disabled={!hasVibe || !hasImages || loading === "style"}
-        className="w-full text-left px-3 py-2 text-sm hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
-      >
-        <span className="w-5 text-center text-accent">
-          {loading === "style" ? "⟳" : "✦"}
-        </span>
-        <span>{loading === "style" ? "Styling..." : "Style Transfer"}</span>
-        {!hasImages && <span className="ml-auto text-[10px] text-muted">needs images</span>}
-      </button>
+        icon={loading === "style" ? "⟳" : "✦"}
+        label={loading === "style" ? "Styling..." : "Style Transfer"}
+        hint={!hasImages ? "needs images" : undefined}
+        spinning={loading === "style"}
+      />
 
-      <button
+      <MenuButton
         onClick={handleGenerateMusic}
         disabled={!hasVibe || loading === "music"}
-        className="w-full text-left px-3 py-2 text-sm hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
-      >
-        <span className="w-5 text-center text-accent">
-          {loading === "music" ? "⟳" : "♪"}
-        </span>
-        <span>{loading === "music" ? "Generating..." : "Generate Music"}</span>
-        {!hasVibe && <span className="ml-auto text-[10px] text-muted">needs vibe</span>}
-      </button>
+        icon={loading === "music" ? "⟳" : "♪"}
+        label={loading === "music" ? "Generating..." : "Generate Music"}
+        hint={!hasVibe ? "needs vibe" : undefined}
+        spinning={loading === "music"}
+      />
 
       <div className="border-t border-border-subtle mt-1 pt-1">
         <button
           onClick={onClose}
-          className="w-full text-left px-3 py-2 text-sm text-muted hover:bg-surface-hover transition-colors"
+          className="w-full text-left px-3 py-2 text-[12px] text-muted/50 hover:text-muted hover:bg-surface-hover/50 transition-colors tracking-wide rounded-md mx-0"
         >
           Cancel
         </button>
       </div>
     </div>
+  );
+}
+
+function MenuButton({
+  onClick,
+  disabled,
+  icon,
+  label,
+  hint,
+  spinning,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  icon: string;
+  label: string;
+  hint?: string;
+  spinning?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full text-left px-3 py-2 text-[12px] hover:bg-accent/8 disabled:opacity-25 disabled:cursor-not-allowed flex items-center gap-2.5 transition-colors tracking-[0.01em] group"
+    >
+      <span
+        className={`w-5 text-center text-accent text-[13px] ${spinning ? "animate-spin" : "group-hover:scale-110 transition-transform"}`}
+      >
+        {icon}
+      </span>
+      <span className="text-foreground/80 group-hover:text-foreground transition-colors">
+        {label}
+      </span>
+      {hint && (
+        <span className="ml-auto text-[9px] text-muted/40 tracking-wide">
+          {hint}
+        </span>
+      )}
+    </button>
   );
 }

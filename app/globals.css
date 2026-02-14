@@ -2,15 +2,17 @@
 @import "@xyflow/react/dist/style.css";
 
 :root {
-  --background: #0a0a0c;
-  --foreground: #e8e8ec;
-  --surface: #141418;
-  --surface-hover: #1c1c22;
-  --border: #2a2a32;
-  --border-subtle: #1e1e26;
+  --background: #08080b;
+  --foreground: #e4e4e9;
+  --surface: #111115;
+  --surface-hover: #19191f;
+  --border: #252530;
+  --border-subtle: #1a1a24;
   --accent: #8b5cf6;
   --accent-dim: #7c3aed;
-  --muted: #71717a;
+  --accent-glow: rgba(139, 92, 246, 0.15);
+  --accent-glow-strong: rgba(139, 92, 246, 0.3);
+  --muted: #64647a;
 }
 
 @theme inline {
@@ -23,13 +25,99 @@
   --color-accent: var(--accent);
   --color-accent-dim: var(--accent-dim);
   --color-muted: var(--muted);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, monospace;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Node Animations ─────────────────────────────────────────── */
+@keyframes node-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes soft-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes luminous-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50% { box-shadow: 0 0 12px 2px var(--accent-glow); }
+}
+
+@keyframes eq-bar {
+  0%, 100% { height: 4px; }
+  50% { height: 18px; }
+}
+
+/* ─── Luminous Node Edges ─────────────────────────────────────── */
+.patina-node {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  animation: node-appear 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.patina-node:hover {
+  border-color: var(--border);
+  box-shadow: 0 0 20px -4px var(--accent-glow);
+}
+
+/* Dismiss button on nodes — positioned inside top-right */
+.patina-node .node-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+  z-index: 10;
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.patina-node:hover .node-dismiss {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.patina-node .node-dismiss:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.patina-node[data-selected="true"] {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 24px -2px var(--accent-glow-strong),
+    0 8px 32px -8px rgba(0, 0, 0, 0.5);
 }
 
 /* ─── React Flow Overrides ─────────────────────────────────────── */
@@ -39,20 +127,22 @@ body {
 
 .react-flow__minimap {
   background-color: var(--surface) !important;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--border-subtle) !important;
 }
 
 .react-flow__controls {
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--border-subtle) !important;
   overflow: hidden;
+  box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.4);
 }
 
 .react-flow__controls button {
   background-color: var(--surface) !important;
   border-color: var(--border-subtle) !important;
   color: var(--foreground) !important;
+  transition: background-color 0.15s ease;
 }
 
 .react-flow__controls button:hover {
@@ -61,32 +151,47 @@ body {
 
 .react-flow__edge-path {
   stroke: var(--border) !important;
-  stroke-width: 2;
+  stroke-width: 1.5;
 }
 
 .react-flow__connection-line {
   stroke: var(--accent) !important;
-  stroke-width: 2;
+  stroke-width: 1.5;
 }
 
 .react-flow__handle {
-  width: 8px !important;
-  height: 8px !important;
+  width: 7px !important;
+  height: 7px !important;
   background-color: var(--accent) !important;
   border: 2px solid var(--surface) !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.4);
+  box-shadow: 0 0 8px var(--accent-glow-strong);
+}
+
+/* ─── Glass Panels ────────────────────────────────────────────── */
+.glass-panel {
+  background: rgba(17, 17, 21, 0.85);
+  border: 1px solid var(--border-subtle);
+  box-shadow:
+    0 4px 24px -4px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 /* ─── Scrollbar Styling ────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);

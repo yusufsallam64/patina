@@ -9,32 +9,33 @@ export function SuggestedNode({ id, data, selected }: NodeProps<PatinaNode>) {
 
   return (
     <div
-      className={`group relative rounded-xl overflow-hidden border-2 border-dashed transition-all duration-300 ${
-        selected
-          ? "border-accent/60 shadow-lg shadow-accent/10"
-          : "border-accent/20 hover:border-accent/40"
-      } opacity-70 hover:opacity-100`}
-      style={{ width: 180 }}
+      className="patina-node group overflow-hidden opacity-60 hover:opacity-100 transition-opacity duration-300"
+      data-selected={selected}
+      style={{
+        width: 180,
+        borderStyle: "dashed",
+        borderColor: "rgba(139, 92, 246, 0.2)",
+      }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={data.content}
         alt="Suggested reference"
-        className="w-full h-auto block"
+        className="w-full h-auto block rounded-[13px]"
         draggable={false}
       />
 
       {/* Action overlay */}
-      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2 rounded-[13px]">
         <button
           onClick={() => acceptSuggestion(id)}
-          className="px-3 py-1.5 text-xs rounded-lg bg-accent text-white hover:bg-accent/80 transition-colors"
+          className="px-3.5 py-1.5 text-[11px] font-medium rounded-lg bg-accent text-white hover:bg-accent-dim transition-colors tracking-wide"
         >
           Keep
         </button>
         <button
           onClick={() => dismissSuggestion(id)}
-          className="px-3 py-1.5 text-xs rounded-lg bg-surface text-foreground hover:bg-surface-hover transition-colors"
+          className="px-3.5 py-1.5 text-[11px] font-medium rounded-lg bg-white/10 text-white/80 hover:bg-white/15 transition-colors tracking-wide"
         >
           Skip
         </button>
@@ -42,7 +43,7 @@ export function SuggestedNode({ id, data, selected }: NodeProps<PatinaNode>) {
 
       {/* Ghost label */}
       <div className="absolute top-2 left-2">
-        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent/20 text-accent uppercase tracking-wider">
+        <span className="text-[9px] px-2 py-0.5 rounded-full bg-accent/15 text-accent/80 uppercase tracking-[0.1em] font-medium">
           suggested
         </span>
       </div>
@@ -50,12 +51,12 @@ export function SuggestedNode({ id, data, selected }: NodeProps<PatinaNode>) {
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-2.5 !h-2.5 !bg-accent/50 !border-2 !border-surface"
+        className="!w-[7px] !h-[7px] !bg-accent/50 !border-2 !border-surface"
       />
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-2.5 !h-2.5 !bg-accent/50 !border-2 !border-surface"
+        className="!w-[7px] !h-[7px] !bg-accent/50 !border-2 !border-surface"
       />
     </div>
   );

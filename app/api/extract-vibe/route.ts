@@ -15,20 +15,45 @@ export async function POST(request: Request) {
     const userContent: Anthropic.Messages.ContentBlockParam[] = [];
 
     if (type === "image") {
-      // For image URLs, pass as image block
-      userContent.push({
-        type: "image",
-        source: { type: "url", url: content },
-      });
+      // Only pass HTTPS image URLs as image blocks (Claude rejects HTTP)
+      const isHttps = content.startsWith("https://");
+      const isDataUri = content.startsWith("data:");
+      if (isHttps) {
+        userContent.push({
+          type: "image",
+          source: { type: "url", url: content },
+        });
+      } else if (isDataUri) {
+        // base64 data URI — extract media type and data
+        const match = content.match(/^data:(image\/[^;]+);base64,(.+)$/);
+        if (match) {
+          userContent.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+              data: match[2],
+            },
+          });
+        }
+      }
+      // For HTTP image URLs, fall through to text-based analysis
     }
 
-    userContent.push({
-      type: "text",
-      text:
-        type === "text"
-          ? `Analyze this text as a creative/aesthetic reference and extract its vibe contribution. The text:\n\n${content}`
-          : `Analyze this image as a creative/aesthetic reference and extract its vibe contribution.`,
-    });
+    let analysisPrompt: string;
+    if (type === "image") {
+      // Check if we actually added an image block above
+      const hasImageBlock = userContent.some((b) => b.type === "image");
+      analysisPrompt = hasImageBlock
+        ? "Analyze this image as a creative/aesthetic reference and extract its vibe contribution."
+        : `Analyze this image URL as a creative/aesthetic reference and extract its vibe contribution. The URL: ${content}`;
+    } else if (type === "url") {
+      analysisPrompt = `Analyze this URL as a creative/aesthetic reference and extract its vibe contribution. Consider the brand, the name, and what this site likely looks and feels like. The URL: ${content}`;
+    } else {
+      analysisPrompt = `Analyze this text as a creative/aesthetic reference and extract its vibe contribution. The text:\n\n${content}`;
+    }
+
+    userContent.push({ type: "text", text: analysisPrompt });
 
     userContent.push({
       type: "text",

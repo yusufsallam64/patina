@@ -34,13 +34,13 @@ export function classifyContent(
     }
 
     if (URL_PATTERN.test(trimmed)) {
-      // Check for image URL by extension (handles query params)
-      // or by known image hosting domains
-      if (IMAGE_EXTENSIONS.test(trimmed) || IMAGE_HOSTS.test(trimmed)) {
+      // Only classify as image if it's HTTPS (Claude rejects HTTP image URLs)
+      const isHttps = trimmed.startsWith("https://");
+      if (isHttps && (IMAGE_EXTENSIONS.test(trimmed) || IMAGE_HOSTS.test(trimmed))) {
         return { type: "image", content: trimmed };
       }
 
-      // General URL
+      // General URL (including HTTP image URLs — treated as URL references)
       return { type: "url", content: trimmed };
     }
 

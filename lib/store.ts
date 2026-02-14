@@ -64,6 +64,12 @@ interface PatinaStore {
   dismissSuggestion: (id: string) => void;
   setIsDiscovering: (v: boolean) => void;
 
+  // Hidden nodes (dismissed but cached)
+  hiddenNodes: PatinaNode[];
+  hideNode: (id: string) => void;
+  restoreNode: (id: string) => void;
+  restoreAllNodes: () => void;
+
   // Mode
   mode: "smart" | "power";
   toggleMode: () => void;
@@ -232,6 +238,36 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
 
   setIsDiscovering: (v) => {
     set({ isDiscovering: v });
+  },
+
+  // ── Hidden Nodes ──
+  hiddenNodes: [],
+
+  hideNode: (id) => {
+    const node = get().nodes.find((n) => n.id === id);
+    if (!node) return;
+    // Move to hidden list — keep vibe cache intact
+    set({
+      nodes: get().nodes.filter((n) => n.id !== id),
+      edges: get().edges.filter((e) => e.source !== id && e.target !== id),
+      hiddenNodes: [...get().hiddenNodes, node],
+    });
+  },
+
+  restoreNode: (id) => {
+    const node = get().hiddenNodes.find((n) => n.id === id);
+    if (!node) return;
+    set({
+      hiddenNodes: get().hiddenNodes.filter((n) => n.id !== id),
+      nodes: [...get().nodes, node],
+    });
+  },
+
+  restoreAllNodes: () => {
+    set({
+      nodes: [...get().nodes, ...get().hiddenNodes],
+      hiddenNodes: [],
+    });
   },
 
   // ── Mode ──
