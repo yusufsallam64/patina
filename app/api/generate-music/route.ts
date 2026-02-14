@@ -1,9 +1,20 @@
 import { NextResponse } from "next/server";
 import type { GenerateMusicRequest } from "@/types";
+import { uploadToSpaces } from "@/lib/spaces";
 
 export const maxDuration = 120;
 
 const SUNO_BASE = "https://studio-api.prod.suno.com/api/v2/external/hackathons";
+
+/** Download audio from Suno CDN and re-upload to DO Spaces for permanent storage */
+async function proxyAudioToSpaces(sunoUrl: string): Promise<string> {
+  const res = await fetch(sunoUrl);
+  if (!res.ok) throw new Error(`Failed to fetch audio from Suno: ${res.status}`);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  const ext = sunoUrl.includes(".mp3") ? "mp3" : "wav";
+  const key = `audio/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  return uploadToSpaces(buffer, key, `audio/${ext === "mp3" ? "mpeg" : "wav"}`);
+}
 
 export async function POST(request: Request) {
   try {
@@ -63,8 +74,18 @@ export async function POST(request: Request) {
       if (!current) continue;
 
       if (current.status === "streaming" || current.status === "complete") {
+        // Proxy audio to DO Spaces so URLs don't expire
+        let permanentUrl = current.audio_url;
+        if (current.audio_url && current.status === "complete") {
+          try {
+            permanentUrl = await proxyAudioToSpaces(current.audio_url);
+          } catch (e) {
+            console.error("Failed to proxy audio to Spaces, using Suno URL:", e);
+          }
+        }
+
         return NextResponse.json({
-          audio_url: current.audio_url,
+          audio_url: permanentUrl,
           title: current.title || "Generated Track",
           status: current.status,
           clip_id: current.id,

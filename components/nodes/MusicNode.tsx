@@ -12,29 +12,44 @@ export function MusicNode({ id, data, selected }: NodeProps<PatinaNode>) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
 
   const audioUrl = data.audioUrl || data.content;
 
+  // Force the audio element to reload when the URL changes
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !audioUrl) return;
+    setLoadError(false);
+    setDuration(0);
+    setProgress(0);
+    setCurrentTime(0);
+    audio.load();
+  }, [audioUrl]);
+
+  // Get duration from timeupdate as a fallback — Suno streaming audio
+  // often reports Infinity for duration until enough is buffered
   const handleTimeUpdate = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
     setCurrentTime(audio.currentTime);
-    if (audio.duration && isFinite(audio.duration)) {
+    if (audio.duration && isFinite(audio.duration) && audio.duration > 0) {
+      setDuration(audio.duration);
       setProgress((audio.currentTime / audio.duration) * 100);
     }
   }, []);
 
   const handleLoadedMetadata = useCallback(() => {
     const audio = audioRef.current;
-    if (audio && isFinite(audio.duration)) {
+    if (audio && isFinite(audio.duration) && audio.duration > 0) {
       setDuration(audio.duration);
     }
   }, []);
 
   const handleDurationChange = useCallback(() => {
     const audio = audioRef.current;
-    if (audio && isFinite(audio.duration)) {
+    if (audio && isFinite(audio.duration) && audio.duration > 0) {
       setDuration(audio.duration);
     }
   }, []);
@@ -48,38 +63,62 @@ export function MusicNode({ id, data, selected }: NodeProps<PatinaNode>) {
       if (playing) {
         audio.pause();
       } else {
+        // If ended, seek to beginning first
+        if (audio.ended) {
+          audio.currentTime = 0;
+        }
+        // If duration is unknown, force a reload before playing
+        if (!isFinite(audio.duration) || audio.duration === 0) {
+          audio.load();
+        }
         audio.play().catch(console.error);
       }
     },
     [playing, audioUrl]
   );
 
+  const seekTo = useCallback((ratio: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    // Use stored duration state as fallback (audio.duration might be Infinity during streaming)
+    const dur = isFinite(audio.duration) && audio.duration > 0
+      ? audio.duration
+      : duration;
+
+    if (!dur || dur <= 0) return;
+
+    // Clear ended state before seeking
+    if (audio.ended) {
+      audio.pause();
+    }
+
+    const targetTime = ratio * dur;
+    audio.currentTime = targetTime;
+    setProgress(ratio * 100);
+    setCurrentTime(targetTime);
+  }, [duration]);
+
   const handleScrub = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.stopPropagation();
-      const audio = audioRef.current;
       const bar = progressRef.current;
-      if (!audio || !bar || !isFinite(audio.duration)) return;
+      if (!bar) return;
       const rect = bar.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      audio.currentTime = ratio * audio.duration;
-      setProgress(ratio * 100);
-      setCurrentTime(audio.currentTime);
+      seekTo(ratio);
     },
-    []
+    [seekTo]
   );
 
   useEffect(() => {
     if (!dragging) return;
     const handleMove = (e: MouseEvent) => {
-      const audio = audioRef.current;
       const bar = progressRef.current;
-      if (!audio || !bar || !isFinite(audio.duration)) return;
+      if (!bar) return;
       const rect = bar.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      audio.currentTime = ratio * audio.duration;
-      setProgress(ratio * 100);
-      setCurrentTime(audio.currentTime);
+      seekTo(ratio);
     };
     const handleUp = () => setDragging(false);
     window.addEventListener("mousemove", handleMove);
@@ -88,10 +127,10 @@ export function MusicNode({ id, data, selected }: NodeProps<PatinaNode>) {
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, [dragging]);
+  }, [dragging, seekTo]);
 
   const formatTime = (s: number) => {
-    if (!isFinite(s) || s === 0) return "0:00";
+    if (!isFinite(s) || s <= 0) return "0:00";
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${sec.toString().padStart(2, "0")}`;
@@ -129,58 +168,73 @@ export function MusicNode({ id, data, selected }: NodeProps<PatinaNode>) {
               ref={audioRef}
               src={audioUrl}
               preload="metadata"
+              crossOrigin="anonymous"
               onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadata}
               onDurationChange={handleDurationChange}
-              onEnded={() => setPlaying(false)}
+              onError={() => setLoadError(true)}
+              onEnded={() => { setPlaying(false); setProgress(100); }}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
             />
 
-            {/* Scrubable progress bar */}
-            <div
-              ref={progressRef}
-              className="w-full h-[6px] bg-border-subtle rounded-full mb-1.5 overflow-hidden cursor-pointer group/scrub"
-              onClick={handleScrub}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                handleScrub(e);
-                setDragging(true);
-              }}
-            >
-              <div
-                className="h-full bg-gradient-to-r from-accent to-accent-dim rounded-full relative"
-                style={{
-                  width: `${progress}%`,
-                  transition: dragging ? "none" : "width 0.3s linear",
-                }}
-              >
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-white shadow-md opacity-0 group-hover/scrub:opacity-100 transition-opacity" />
-              </div>
-            </div>
-
-            {/* Time display */}
-            <div className="flex justify-between mb-3">
-              <span className="text-[9px] font-mono text-muted/50 tabular-nums">
-                {formatTime(currentTime)}
-              </span>
-              <span className="text-[9px] font-mono text-muted/50 tabular-nums">
-                {formatTime(duration)}
-              </span>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center justify-center">
-              <button
-                onClick={togglePlay}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="w-10 h-10 rounded-full bg-accent hover:bg-accent-dim flex items-center justify-center transition-all duration-200 hover:shadow-[0_0_16px_var(--accent-glow-strong)] cursor-pointer"
-              >
-                <span className="text-white text-sm ml-[1px]">
-                  {playing ? "⏸" : "▶"}
+            {loadError ? (
+              <div className="flex flex-col items-center justify-center py-4 gap-2">
+                <span className="text-[11px] text-red-400/70 tracking-wide">
+                  Audio unavailable
                 </span>
-              </button>
-            </div>
+                <span className="text-[9px] text-muted/40 tracking-wide">
+                  Suno URL may have expired
+                </span>
+              </div>
+            ) : (
+              <>
+                {/* Scrubable progress bar */}
+                <div
+                  ref={progressRef}
+                  className="w-full h-[6px] bg-border-subtle rounded-full mb-1.5 overflow-hidden cursor-pointer group/scrub"
+                  onClick={handleScrub}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    handleScrub(e);
+                    setDragging(true);
+                  }}
+                >
+                  <div
+                    className="h-full bg-gradient-to-r from-accent to-accent-dim rounded-full relative"
+                    style={{
+                      width: `${progress}%`,
+                      transition: dragging ? "none" : "width 0.3s linear",
+                    }}
+                  >
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-white shadow-md opacity-0 group-hover/scrub:opacity-100 transition-opacity" />
+                  </div>
+                </div>
+
+                {/* Time display */}
+                <div className="flex justify-between mb-3">
+                  <span className="text-[9px] font-mono text-muted/50 tabular-nums">
+                    {formatTime(currentTime)}
+                  </span>
+                  <span className="text-[9px] font-mono text-muted/50 tabular-nums">
+                    {duration > 0 ? formatTime(duration) : "—:——"}
+                  </span>
+                </div>
+
+                {/* Controls */}
+                <div className="flex items-center justify-center">
+                  <button
+                    onClick={togglePlay}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="w-10 h-10 rounded-full bg-accent hover:bg-accent-dim flex items-center justify-center transition-all duration-200 hover:shadow-[0_0_16px_var(--accent-glow-strong)] cursor-pointer"
+                  >
+                    <span className="text-white text-sm ml-[1px]">
+                      {playing ? "⏸" : "▶"}
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center py-4 gap-3">
