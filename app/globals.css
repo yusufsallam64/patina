@@ -1,26 +1,93 @@
 @import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0c;
+  --foreground: #e8e8ec;
+  --surface: #141418;
+  --surface-hover: #1c1c22;
+  --border: #2a2a32;
+  --border-subtle: #1e1e26;
+  --accent: #8b5cf6;
+  --accent-dim: #7c3aed;
+  --muted: #71717a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-muted: var(--muted);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ─── React Flow Overrides ─────────────────────────────────────── */
+.react-flow__background {
+  background-color: var(--background) !important;
+}
+
+.react-flow__minimap {
+  background-color: var(--surface) !important;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle) !important;
+}
+
+.react-flow__controls {
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle) !important;
+  overflow: hidden;
+}
+
+.react-flow__controls button {
+  background-color: var(--surface) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--foreground) !important;
+}
+
+.react-flow__controls button:hover {
+  background-color: var(--surface-hover) !important;
+}
+
+.react-flow__edge-path {
+  stroke: var(--border) !important;
+  stroke-width: 2;
+}
+
+.react-flow__connection-line {
+  stroke: var(--accent) !important;
+  stroke-width: 2;
+}
+
+.react-flow__handle {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: var(--accent) !important;
+  border: 2px solid var(--surface) !important;
+}
+
+/* ─── Scrollbar Styling ────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
