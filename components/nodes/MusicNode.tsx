@@ -1,11 +1,21 @@
 "use client";
 
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { type NodeProps } from "@xyflow/react";
+import { motion } from "framer-motion";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { usePatinaStore } from "@/lib/store";
 import type { PatinaNode } from "@/types";
 import { DismissButton } from "./DismissButton";
 
+const nodeEntrance = {
+  initial: { opacity: 0, scale: 0.8, y: 12 },
+  animate: { opacity: 1, scale: 1, y: 0 },
+  transition: { type: "spring" as const, stiffness: 350, damping: 25, mass: 0.8 },
+};
+
 export function MusicNode({ id, data, selected }: NodeProps<PatinaNode>) {
+  const vibeCache = usePatinaStore((s) => s.vibeCache);
+  const nodeColor = vibeCache[id]?.colors?.[0] || null;
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -137,10 +147,20 @@ export function MusicNode({ id, data, selected }: NodeProps<PatinaNode>) {
   };
 
   return (
-    <div
+    <motion.div
       className="patina-node group cursor-default"
       data-selected={selected}
-      style={{ width: 280 }}
+      initial={nodeEntrance.initial}
+      animate={nodeEntrance.animate}
+      transition={nodeEntrance.transition}
+      style={{
+        width: 280,
+        ...(nodeColor ? {
+          '--node-color': nodeColor,
+          '--node-glow': `${nodeColor}40`,
+          '--node-glow-strong': `${nodeColor}66`,
+        } as React.CSSProperties : {}),
+      }}
     >
       <DismissButton nodeId={id} />
       {/* Header */}
@@ -256,17 +276,6 @@ export function MusicNode({ id, data, selected }: NodeProps<PatinaNode>) {
           </div>
         )}
       </div>
-
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!w-[7px] !h-[7px] !bg-accent !border-2 !border-surface"
-      />
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!w-[7px] !h-[7px] !bg-accent !border-2 !border-surface"
-      />
-    </div>
+    </motion.div>
   );
 }

@@ -37,17 +37,6 @@ body {
 }
 
 /* ─── Node Animations ─────────────────────────────────────────── */
-@keyframes node-appear {
-  from {
-    opacity: 0;
-    transform: scale(0.92) translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
 @keyframes soft-pulse {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
@@ -63,6 +52,11 @@ body {
   50% { height: 18px; }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ─── Luminous Node Edges ─────────────────────────────────────── */
 .patina-node {
   position: relative;
@@ -70,12 +64,11 @@ body {
   border: 1px solid var(--border-subtle);
   background: var(--surface);
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
-  animation: node-appear 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .patina-node:hover {
-  border-color: var(--border);
-  box-shadow: 0 0 20px -4px var(--accent-glow);
+  border-color: var(--node-color, var(--border));
+  box-shadow: 0 0 20px -4px var(--node-glow, var(--accent-glow));
 }
 
 /* Dismiss button on nodes — positioned inside top-right */
@@ -113,16 +106,21 @@ body {
 }
 
 .patina-node[data-selected="true"] {
-  border-color: var(--accent);
+  border-color: var(--node-color, var(--accent));
   box-shadow:
-    0 0 0 1px var(--accent),
-    0 0 24px -2px var(--accent-glow-strong),
+    0 0 0 1px var(--node-color, var(--accent)),
+    0 0 24px -2px var(--node-glow-strong, var(--accent-glow-strong)),
     0 8px 32px -8px rgba(0, 0, 0, 0.5);
 }
 
 /* ─── React Flow Overrides ─────────────────────────────────────── */
 .react-flow__background {
-  background-color: var(--background) !important;
+  background-color: transparent !important;
+}
+
+.react-flow__renderer,
+.react-flow__pane {
+  background-color: transparent !important;
 }
 
 .react-flow__minimap {
@@ -149,29 +147,6 @@ body {
   background-color: var(--surface-hover) !important;
 }
 
-.react-flow__edge-path {
-  stroke: var(--border) !important;
-  stroke-width: 1.5;
-}
-
-.react-flow__connection-line {
-  stroke: var(--accent) !important;
-  stroke-width: 1.5;
-}
-
-.react-flow__handle {
-  width: 7px !important;
-  height: 7px !important;
-  background-color: var(--accent) !important;
-  border: 2px solid var(--surface) !important;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.react-flow__handle:hover {
-  transform: scale(1.4);
-  box-shadow: 0 0 8px var(--accent-glow-strong);
-}
-
 /* ─── Glass Panels ────────────────────────────────────────────── */
 .glass-panel {
   background: rgba(17, 17, 21, 0.85);
@@ -195,4 +170,12 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 3px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 3px;
 }

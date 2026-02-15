@@ -1,14 +1,71 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePatinaStore } from "@/lib/store";
 import { PaletteDisplay } from "./PaletteDisplay";
 import { MoodTags } from "./MoodTags";
 
 export function VibePanel() {
-  const { compositeVibe, isExtracting, nodes, hiddenNodes, restoreNode, restoreAllNodes } = usePatinaStore();
+  const {
+    compositeVibe,
+    isExtracting,
+    isDiscovering,
+    suggestedNodes,
+    requestRediscovery,
+    nodes,
+    hiddenNodes,
+    restoreNode,
+    restoreAllNodes,
+    vibeNarrative,
+    isNarrativeLoading,
+    setVibeNarrative,
+    setIsNarrativeLoading,
+  } = usePatinaStore();
   const [manualClose, setManualClose] = useState(false);
+
+  // Debounced narrative generation when vibe changes
+  const narrativeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastVibeKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!compositeVibe) return;
+
+    // Build a key from the vibe's meaningful content to avoid redundant calls
+    const vibeKey = [
+      ...compositeVibe.mood_tags,
+      ...compositeVibe.color_palette.dominant.slice(0, 3),
+      ...compositeVibe.aesthetic_tags,
+    ].join("|");
+
+    if (vibeKey === lastVibeKeyRef.current) return;
+
+    if (narrativeTimerRef.current) clearTimeout(narrativeTimerRef.current);
+
+    narrativeTimerRef.current = setTimeout(async () => {
+      lastVibeKeyRef.current = vibeKey;
+      setIsNarrativeLoading(true);
+      try {
+        const res = await fetch("/api/vibe-narrative", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vibe: compositeVibe }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setVibeNarrative(data.narrative);
+        }
+      } catch (err) {
+        console.error("Narrative generation failed:", err);
+      } finally {
+        setIsNarrativeLoading(false);
+      }
+    }, 3000);
+
+    return () => {
+      if (narrativeTimerRef.current) clearTimeout(narrativeTimerRef.current);
+    };
+  }, [compositeVibe, setVibeNarrative, setIsNarrativeLoading]);
 
   const referenceCount = nodes.filter((n) =>
     ["image", "text", "url"].includes(n.data.type)
@@ -34,11 +91,11 @@ export function VibePanel() {
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             onClick={() => setManualClose(false)}
-            className="fixed right-0 top-1/2 -translate-y-1/2 z-20 w-6 h-16 bg-surface border border-r-0 border-border-subtle rounded-l-lg flex items-center justify-center hover:bg-surface-hover transition-colors group"
+            className="fixed right-0 top-1/2 -translate-y-1/2 z-20 w-7 h-20 bg-surface/90 backdrop-blur-sm border border-r-0 border-border-subtle rounded-l-lg flex items-center justify-center hover:bg-surface-hover transition-colors group"
           >
-            <span className="text-[10px] text-muted/50 group-hover:text-accent transition-colors">
-              ‹
-            </span>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-muted/40 group-hover:text-accent transition-colors">
+              <path d="M9 3l-4 4 4 4" />
+            </svg>
           </motion.button>
         )}
       </AnimatePresence>
@@ -72,10 +129,12 @@ export function VibePanel() {
                     )}
                     <button
                       onClick={() => setManualClose(true)}
-                      className="text-[10px] text-muted/30 hover:text-muted/60 transition-colors p-1"
-                      title="Collapse"
+                      className="text-[10px] text-muted/40 hover:text-foreground/60 transition-colors p-1.5 rounded-md hover:bg-border-subtle/40"
+                      title="Collapse panel"
                     >
-                      ›
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                        <path d="M5 3l4 4-4 4" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -89,6 +148,31 @@ export function VibePanel() {
                 {compositeVibe ? (
                   <>
                     <PaletteDisplay palette={compositeVibe.color_palette} />
+
+                    {/* Vibe Narrative */}
+                    <div className="relative">
+                      {vibeNarrative ? (
+                        <p
+                          className="text-[13px] leading-[1.7] tracking-[0.01em] text-foreground/80 italic"
+                          style={{
+                            opacity: isNarrativeLoading ? 0.4 : 1,
+                            transition: "opacity 0.5s ease",
+                          }}
+                        >
+                          {vibeNarrative}
+                        </p>
+                      ) : isNarrativeLoading ? (
+                        <div className="flex items-center gap-2 py-1">
+                          <div
+                            className="w-1 h-1 rounded-full bg-accent"
+                            style={{ animation: "soft-pulse 1.5s ease-in-out infinite" }}
+                          />
+                          <span className="text-[11px] text-muted/40 tracking-wide italic">
+                            reading your taste...
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
 
                     {/* Mood */}
                     <div>
@@ -131,6 +215,44 @@ export function VibePanel() {
                         <p className="text-[12px] italic text-foreground/50 leading-relaxed">
                           {compositeVibe.sonic_mood}
                         </p>
+                      </div>
+                    )}
+
+                    {/* Discovery */}
+                    {referenceCount >= 2 && (
+                      <div className="border-t border-border-subtle pt-5">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-[10px] font-medium text-muted/70 uppercase tracking-[0.12em]">
+                            Discovery
+                          </h3>
+                          {isDiscovering && (
+                            <div className="flex items-center gap-1.5">
+                              <div
+                                className="w-1.5 h-1.5 rounded-full bg-accent"
+                                style={{ animation: "soft-pulse 1.5s ease-in-out infinite" }}
+                              />
+                              <span className="text-[10px] text-accent tracking-wide">searching</span>
+                            </div>
+                          )}
+                        </div>
+                        {suggestedNodes.length > 0 ? (
+                          <div className="space-y-2">
+                            <p className="text-[11px] text-muted/50 leading-relaxed">
+                              {suggestedNodes.length} suggestion{suggestedNodes.length !== 1 ? "s" : ""} on canvas
+                            </p>
+                            <button
+                              onClick={requestRediscovery}
+                              disabled={isDiscovering}
+                              className="text-[11px] text-accent/70 hover:text-accent disabled:text-muted/30 tracking-wide transition-colors"
+                            >
+                              {isDiscovering ? "Searching..." : "Rediscover"}
+                            </button>
+                          </div>
+                        ) : !isDiscovering ? (
+                          <p className="text-[11px] text-muted/40 leading-relaxed">
+                            Suggestions will appear around your collection
+                          </p>
+                        ) : null}
                       </div>
                     )}
                   </>

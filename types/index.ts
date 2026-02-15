@@ -26,6 +26,8 @@ export interface PatinaNodeData extends Record<string, unknown> {
   // For music nodes
   audioUrl?: string;
   title?: string;
+  // Loading state for placeholder nodes
+  isLoading?: boolean;
 }
 
 export type PatinaNode = Node<PatinaNodeData>;
@@ -82,10 +84,12 @@ export interface VibeProfile {
 
 export interface SuggestedReference {
   id: string;
-  imageUrl: string;
-  originUrl: string;
-  width: number;
-  height: number;
+  type: "image" | "text" | "url";
+  content: string; // image URL for images, snippet for text, page URL for urls
+  title?: string;
+  originUrl?: string;
+  width?: number;
+  height?: number;
   query?: string;
 }
 
@@ -162,4 +166,27 @@ export interface ParseUrlResponse {
   text: string;
   images: string[];
   ogImage?: string;
+}
+
+// ─── Proximity-Based Generation Types ───────────────────────────
+
+export type GenerationMode = "remix" | "restyle" | "text";
+
+export interface NearbyNodeContext {
+  type: PatinaNodeType;
+  content: string;
+  vibeContribution?: VibeContribution;
+  weight: number;
+}
+
+export interface GenerateFromContextRequest {
+  nearby_nodes: NearbyNodeContext[];
+  mode: GenerationMode;
+  target_image?: string;
+}
+
+export interface GenerateFromContextResponse {
+  imageUrl?: string;
+  text?: string;
+  prompt_used?: string;
 }

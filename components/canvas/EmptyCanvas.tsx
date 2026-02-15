@@ -1,9 +1,69 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePatinaStore } from "@/lib/store";
 
 const ease = [0.16, 1, 0.3, 1] as const;
+
+const DEMO_NODES = [
+  {
+    data: {
+      type: "image" as const,
+      content: "https://images.unsplash.com/photo-1487958449943-2429e8be8625?w=600&q=80&auto=format",
+      title: "Brutalist concrete",
+    },
+    position: { x: 80, y: 60 },
+  },
+  {
+    data: {
+      type: "image" as const,
+      content: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80&auto=format",
+      title: "Abstract gradient",
+    },
+    position: { x: 380, y: 40 },
+  },
+  {
+    data: {
+      type: "image" as const,
+      content: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80&auto=format",
+      title: "Alpine atmosphere",
+    },
+    position: { x: 80, y: 340 },
+  },
+  {
+    data: {
+      type: "image" as const,
+      content: "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=600&q=80&auto=format",
+      title: "Warm interior",
+    },
+    position: { x: 680, y: 80 },
+  },
+  {
+    data: {
+      type: "image" as const,
+      content: "https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=600&q=80&auto=format",
+      title: "Tokyo neon",
+    },
+    position: { x: 380, y: 320 },
+  },
+  {
+    data: {
+      type: "text" as const,
+      content: "Contrast between raw, brutalist surfaces and warm ambient lighting. The tension between industrial coldness and human warmth. Think Tadao Ando meets James Turrell — precision geometry softened by light.",
+      title: "Mood direction",
+    },
+    position: { x: 700, y: 340 },
+  },
+  {
+    data: {
+      type: "text" as const,
+      content: "Color palette should breathe. Deep charcoals and warm grays as the foundation, punctuated by amber and soft violet accents. Never pure black — always a hint of warmth underneath.",
+      title: "Color notes",
+    },
+    position: { x: 700, y: 550 },
+  },
+];
 
 /**
  * Cinematic empty state with layered atmospheric depth.
@@ -11,7 +71,20 @@ const ease = [0.16, 1, 0.3, 1] as const;
  */
 export function EmptyCanvas() {
   const nodeCount = usePatinaStore((s) => s.nodes.length);
+  const addNode = usePatinaStore((s) => s.addNode);
   const visible = nodeCount === 0;
+  const [seeding, setSeeding] = useState(false);
+
+  const seedDemo = useCallback(() => {
+    setSeeding(true);
+    // Stagger node creation for a nice cascade effect
+    DEMO_NODES.forEach((node, i) => {
+      setTimeout(() => {
+        addNode(node.data, node.position);
+      }, i * 120);
+    });
+    setTimeout(() => setSeeding(false), DEMO_NODES.length * 120 + 200);
+  }, [addNode]);
 
   return (
     <AnimatePresence>
@@ -249,6 +322,20 @@ export function EmptyCanvas() {
                 <span className="w-[3px] h-[3px] rounded-full bg-muted/20" />
                 <span className="font-mono">&#8984;V</span>
               </div>
+
+              {/* Demo seed button */}
+              <motion.button
+                onClick={seedDemo}
+                disabled={seeding}
+                className="mt-6 pointer-events-auto px-5 py-2.5 rounded-xl border border-accent/20 bg-accent/5 hover:bg-accent/10 hover:border-accent/30 text-[11px] text-accent/60 hover:text-accent/90 tracking-[0.06em] font-medium transition-all duration-300 disabled:opacity-40"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 2.2, duration: 0.6 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {seeding ? "Loading..." : "Load demo board"}
+              </motion.button>
             </motion.div>
           </div>
         </motion.div>

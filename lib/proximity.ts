@@ -31,6 +31,24 @@ export function centroid(nodes: PatinaNode[]): { x: number; y: number } {
 }
 
 /**
+ * Find all nodes within maxDistance of a point, sorted by distance (closest first).
+ * Returns each node with its distance and influence weight.
+ */
+export function getNodesNearPoint(
+  nodes: PatinaNode[],
+  point: { x: number; y: number },
+  maxDistance = 1500
+): { node: PatinaNode; distance: number; weight: number }[] {
+  return nodes
+    .map((node) => {
+      const distance = euclideanDistance(node.position, point);
+      return { node, distance, weight: distanceToWeight(distance) };
+    })
+    .filter(({ distance }) => distance <= maxDistance)
+    .sort((a, b) => a.distance - b.distance);
+}
+
+/**
  * Compute proximity-weighted contributions for vibe merging.
  * Returns an array of { nodeId, vibe, weight } for each node that has a cached vibe.
  */

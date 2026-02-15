@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import * as cheerio from "cheerio";
+import anthropic from "@/lib/claude";
 import type { ParseUrlResponse } from "@/types";
+
+export const maxDuration = 30;
 
 export async function POST(request: Request) {
   try {
@@ -32,20 +35,19 @@ export async function POST(request: Request) {
 
     const ogImage = $('meta[property="og:image"]').attr("content") || undefined;
 
-    // Extract main text content (first ~500 chars of body text)
-    const text = $("article, main, .content, .post, body")
+    // Extract full page text — grab from semantic containers first, fall back to body
+    const rawText = $("article, main, .content, .post, .entry-content, [role='main']")
       .first()
       .text()
       .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 500);
+      .trim();
+    const bodyText = rawText || $("body").text().replace(/\s+/g, " ").trim();
 
     // Extract image URLs (first 5)
     const images: string[] = [];
     $("img").each((_, el) => {
       const src = $(el).attr("src");
       if (src && !src.startsWith("data:") && images.length < 5) {
-        // Resolve relative URLs
         try {
           const resolved = new URL(src, url).href;
           images.push(resolved);
@@ -54,6 +56,41 @@ export async function POST(request: Request) {
         }
       }
     });
+
+    // Run through Haiku for a rich summary + sentiment/aesthetic analysis
+    let text = description;
+    if (bodyText.length > 100) {
+      try {
+        const summary = await anthropic.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1024,
+          messages: [
+            {
+              role: "user",
+              content: `Analyze this webpage content thoroughly. Write a rich summary covering:
+
+1. **What it's about** — the core subject, key ideas, and narrative
+2. **Tone & voice** — formal/casual, technical/poetic, warm/cold, etc.
+3. **Aesthetic & visual language** — any design sensibility, color references, textures, or spatial qualities described or implied
+4. **Emotional register** — what feelings does this content evoke? What mood does it create?
+5. **Cultural context** — references, influences, era, movement, or subculture it belongs to
+
+End with a "Vibe:" line — a dense, evocative one-liner capturing the overall aesthetic energy (like a mood board caption).
+
+Title: ${title}
+URL: ${url}
+
+Content:
+${bodyText.slice(0, 12000)}`,
+            },
+          ],
+        });
+        text = summary.content[0].type === "text" ? summary.content[0].text : description;
+      } catch (err) {
+        console.error("Summary error, falling back to raw text:", err);
+        text = bodyText.slice(0, 2000);
+      }
+    }
 
     return NextResponse.json({
       title,

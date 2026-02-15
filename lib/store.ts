@@ -59,16 +59,24 @@ interface PatinaStore {
   // Discovery
   suggestedNodes: SuggestedReference[];
   isDiscovering: boolean;
+  discoveryVersion: number;
   setSuggestedNodes: (nodes: SuggestedReference[]) => void;
   acceptSuggestion: (id: string) => void;
   dismissSuggestion: (id: string) => void;
   setIsDiscovering: (v: boolean) => void;
+  requestRediscovery: () => void;
 
   // Hidden nodes (dismissed but cached)
   hiddenNodes: PatinaNode[];
   hideNode: (id: string) => void;
   restoreNode: (id: string) => void;
   restoreAllNodes: () => void;
+
+  // Vibe narrative
+  vibeNarrative: string | null;
+  isNarrativeLoading: boolean;
+  setVibeNarrative: (narrative: string | null) => void;
+  setIsNarrativeLoading: (v: boolean) => void;
 
   // Mode
   mode: "smart" | "power";
@@ -207,37 +215,93 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
   // ── Discovery ──
   suggestedNodes: [],
   isDiscovering: false,
+  discoveryVersion: 0,
 
-  setSuggestedNodes: (nodes) => {
-    set({ suggestedNodes: nodes });
+  setSuggestedNodes: (suggestions) => {
+    // Compute bounding box of existing nodes to position suggestions around them
+    const currentNodes = get().nodes;
+    let minX = 0, minY = 0, maxX = 400, maxY = 400;
+    if (currentNodes.length > 0) {
+      minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity;
+      for (const n of currentNodes) {
+        minX = Math.min(minX, n.position.x);
+        minY = Math.min(minY, n.position.y);
+        maxX = Math.max(maxX, n.position.x + 200);
+        maxY = Math.max(maxY, n.position.y + 200);
+      }
+    }
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const spread = Math.max(maxX - minX, maxY - minY, 300);
+    const radius = spread * 0.8 + 100;
+
+    // Convert suggestions to React Flow nodes and add to canvas
+    const suggestedFlowNodes: PatinaNode[] = suggestions.map((s, i) => {
+      const angle = (i / suggestions.length) * 2 * Math.PI - Math.PI / 2;
+      return {
+        id: s.id,
+        type: "suggested",
+        position: {
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+        },
+        data: {
+          type: "suggested" as const,
+          content: s.content,
+          title: s.title,
+          metadata: { originUrl: s.originUrl, query: s.query, suggestionType: s.type },
+        },
+      };
+    });
+
+    set({
+      suggestedNodes: suggestions,
+      nodes: [...currentNodes, ...suggestedFlowNodes],
+    });
   },
 
   acceptSuggestion: (id) => {
     const suggestion = get().suggestedNodes.find((s) => s.id === id);
     if (!suggestion) return;
 
-    get().addNode(
-      {
-        type: "image",
-        content: suggestion.imageUrl,
-        metadata: { originUrl: suggestion.originUrl, fromDiscovery: true },
-      },
-      { x: Math.random() * 400 + 100, y: Math.random() * 400 + 100 }
-    );
-
+    // Replace the suggested node in the nodes array with a real node of the right type
+    const nodeType = suggestion.type === "url" ? "text" : suggestion.type;
     set({
+      nodes: get().nodes.map((n) =>
+        n.id === id
+          ? {
+              ...n,
+              type: nodeType,
+              data: {
+                ...n.data,
+                type: nodeType as PatinaNodeData["type"],
+                metadata: { ...n.data.metadata, fromDiscovery: true },
+              },
+            }
+          : n
+      ),
       suggestedNodes: get().suggestedNodes.filter((s) => s.id !== id),
     });
   },
 
   dismissSuggestion: (id) => {
     set({
+      nodes: get().nodes.filter((n) => n.id !== id),
       suggestedNodes: get().suggestedNodes.filter((s) => s.id !== id),
     });
   },
 
   setIsDiscovering: (v) => {
     set({ isDiscovering: v });
+  },
+
+  requestRediscovery: () => {
+    // Clear existing suggestions from canvas and bump version to trigger new discovery
+    set({
+      nodes: get().nodes.filter((n) => n.type !== "suggested"),
+      suggestedNodes: [],
+      discoveryVersion: get().discoveryVersion + 1,
+    });
   },
 
   // ── Hidden Nodes ──
@@ -270,6 +334,12 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
     });
   },
 
+  // ── Vibe Narrative ──
+  vibeNarrative: null,
+  isNarrativeLoading: false,
+  setVibeNarrative: (narrative) => set({ vibeNarrative: narrative }),
+  setIsNarrativeLoading: (v) => set({ isNarrativeLoading: v }),
+
   // ── Mode ──
   mode: "smart",
 
@@ -300,6 +370,7 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
       vibeCache: {},
       compositeVibe: null,
       suggestedNodes: [],
+      vibeNarrative: null,
     });
 
     saveBoardsIndex(updatedBoards);
@@ -324,6 +395,7 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
       compositeVibe: data?.compositeVibe || null,
       suggestedNodes: [],
       isExtracting: false,
+      vibeNarrative: null,
     });
   },
 
