@@ -35,6 +35,8 @@ export function DiscoveryDeck() {
     clearTargetedNodes,
   } = usePatinaStore();
 
+  const addNode = usePatinaStore((s) => s.addNode);
+
   const [state, setState] = useState<DeckState>("idle");
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [currentQ, setCurrentQ] = useState(0);
@@ -43,6 +45,9 @@ export function DiscoveryDeck() {
   const [currentCard, setCurrentCard] = useState(0);
   const [exitDirection, setExitDirection] = useState<"left" | "up">("left");
   const contextInputRef = useRef<HTMLInputElement>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [isMaterializing, setIsMaterializing] = useState(false);
 
   const reactFlowInstance = useReactFlow();
 
@@ -246,6 +251,109 @@ export function DiscoveryDeck() {
     }
   };
 
+  const triggerVibeSearch = async (query: string) => {
+    if (!query.trim() || !compositeVibe) return;
+    setState("searching");
+    setIsDiscovering(true);
+    setSearchQuery("");
+
+    try {
+      const refNodes = nodes
+        .filter((n) => ["image", "text", "url"].includes(n.data.type))
+        .slice(0, 6);
+
+      const res = await fetch("/api/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vibe: compositeVibe,
+          references: refNodes.map((n) => ({
+            type: n.data.type,
+            content: n.data.content,
+            title: n.data.title,
+          })),
+          narrative: vibeNarrative,
+          searchQuery: query.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.suggestions?.length > 0) {
+          setSuggestedNodes(data.suggestions);
+          setCurrentCard(0);
+          setState("deck");
+        } else {
+          setState("idle");
+        }
+        if (data.relatedQuestions) {
+          setRelatedQuestions(data.relatedQuestions);
+        }
+      } else {
+        setState("idle");
+      }
+    } catch {
+      setState("idle");
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
+
+  const triggerMaterialize = async () => {
+    if (!compositeVibe || isMaterializing) return;
+    setIsMaterializing(true);
+
+    const center = getViewportCenter();
+
+    // Create placeholder code node
+    const nodeId = addNode(
+      {
+        type: "code",
+        content: "",
+        previewHtml: `<html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#111115;font-family:system-ui"><div style="text-align:center"><div style="font-size:24px;margin-bottom:12px;animation:spin 1.5s linear infinite">◈</div><p style="color:#64647a;font-size:13px;letter-spacing:0.05em">Materializing brand guide...</p></div><style>@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}</style></body></html>`,
+        title: "Materializing...",
+      },
+      center
+    );
+
+    try {
+      const res = await fetch("/api/generate-ui", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vibe: compositeVibe,
+          user_input: `Generate a beautiful brand style guide / brand guidelines page that embodies this exact aesthetic. Include:
+- A hero section with the brand mood captured in a single evocative phrase
+- Color palette display showing the exact dominant colors (${compositeVibe.color_palette.dominant.join(", ")}) and accent colors (${compositeVibe.color_palette.accent.join(", ")}) as swatches with hex labels
+- Typography recommendations with sample text rendered in appropriate Google Fonts
+- Mood & texture description section
+- A "Do / Don't" section for visual style guidance
+- Sample UI patterns (buttons, cards, inputs) styled in the vibe
+
+The page itself should BE the brand — design it using the exact colors, mood (${compositeVibe.mood_tags.join(", ")}), and aesthetic (${compositeVibe.aesthetic_tags.join(", ")}). Texture: ${compositeVibe.texture}. Sonic mood: ${compositeVibe.sonic_mood}. Make it feel like a real brand book from a top design studio, not a generic template.${vibeNarrative ? ` Curatorial narrative: "${vibeNarrative}"` : ""}`,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Generate failed");
+      const data = await res.json();
+
+      const { updateNodeData } = usePatinaStore.getState();
+      updateNodeData(nodeId, {
+        content: data.code,
+        previewHtml: data.preview_html,
+        title: "Brand Guide",
+      });
+    } catch {
+      const { updateNodeData } = usePatinaStore.getState();
+      updateNodeData(nodeId, {
+        title: "Generation failed",
+        previewHtml: `<html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#111115;font-family:system-ui"><p style="color:#ef4444;font-size:13px">Materialization failed</p></body></html>`,
+      });
+    } finally {
+      setIsMaterializing(false);
+    }
+  };
+
   const handleAdd = () => {
     const card = suggestedNodes[currentCard];
     if (!card) return;
@@ -288,7 +396,7 @@ export function DiscoveryDeck() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="flex flex-col items-center gap-2"
+              className="flex flex-col items-center gap-3"
               style={{ marginBottom: "8vh" }}
             >
               {/* Related question hints from previous round */}
@@ -304,13 +412,49 @@ export function DiscoveryDeck() {
                   ))}
                 </div>
               )}
-              <div className="w-[40px] h-px bg-border-subtle mb-1" />
-              <button
-                onClick={startInterview}
-                className="text-[12px] uppercase tracking-[0.14em] text-muted/70 hover:text-foreground/90 transition-colors duration-200 cursor-pointer"
-              >
-                go deeper
-              </button>
+
+              {/* Vibe-aware search input */}
+              <div className="flex items-center gap-2 bg-surface border border-border-subtle rounded-[3px] px-4 py-2.5" style={{ width: 360 }}>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && searchQuery.trim()) {
+                      triggerVibeSearch(searchQuery);
+                    }
+                  }}
+                  placeholder="search through your vibe..."
+                  className="flex-1 bg-transparent text-[12px] text-foreground/80 placeholder:text-muted/40 outline-none tracking-[0.02em]"
+                />
+                {searchQuery.trim() && (
+                  <button
+                    onClick={() => triggerVibeSearch(searchQuery)}
+                    className="text-[10px] text-accent hover:text-accent/80 transition-colors tracking-wide cursor-pointer"
+                  >
+                    search
+                  </button>
+                )}
+              </div>
+
+              {/* Actions row */}
+              <div className="flex items-center" style={{ gap: 32 }}>
+                <button
+                  onClick={startInterview}
+                  className="text-[11px] uppercase tracking-[0.14em] text-muted/70 hover:text-foreground/90 transition-colors duration-200 cursor-pointer"
+                >
+                  go deeper
+                </button>
+                <span className="text-[11px] text-muted/30">·</span>
+                <button
+                  onClick={triggerMaterialize}
+                  disabled={isMaterializing}
+                  className="text-[11px] uppercase tracking-[0.14em] text-muted/70 hover:text-foreground/90 transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isMaterializing ? "generating..." : "generate style guide"}
+                </button>
+              </div>
             </motion.div>
           )}
 

@@ -13,6 +13,43 @@ interface DiscoverRequestBody {
   narrative?: string;
   interviewAnswers?: InterviewAnswer[];
   targetedContext?: string;
+  searchQuery?: string;
+}
+
+function buildSearchPrompt(query: string, vibeContext: string, narrative: string | undefined): string {
+  return `You are an expert cultural researcher and creative curator. A user is building a personal moodboard / reference collection with a specific aesthetic sensibility. They are searching for "${query}" but want results that match the vibe and aesthetic world of their collection — not generic results.
+
+THE COLLECTION'S AESTHETIC PROFILE:
+${vibeContext}
+
+${narrative ? `A curatorial reading of the collection:\n${narrative}\n` : ""}
+SEARCH QUERY: "${query}"
+
+Find 6-8 specific, high-quality results for "${query}" that would feel at home in this collection's aesthetic world. Prioritize results that match both the search intent AND the collection's mood, color palette, and cultural sensibility.
+
+CONTENT DOMAINS — search across all of these:
+- **[essay]** Essays & Writing: Long-form pieces, criticism, manifestos, interviews
+- **[music]** Music & Audio: Specific albums, tracks, mixes
+- **[video]** Video & Film: Specific films, video essays, documentaries
+- **[typography]** Typography: Google Fonts that match the mood (link to fonts.google.com/specimen/...)
+- **[visual]** Visual Art & Photography: Specific photographs, paintings, installations
+- **[image]** Images: Direct image links from quality sources
+
+What makes a good result:
+- Matches what the user is searching for
+- ALSO fits the aesthetic/cultural world of their collection
+- A specific work by a specific person
+- From quality sources, not stock photo sites or listicles
+
+Present each discovery as a numbered list. Start each entry with a [domain] tag. For each:
+- Domain tag in brackets
+- Bold the title and creator
+- Cite your source with [N] references
+- One sentence on why this fits both the search and the vibe
+
+Example:
+1. [visual] **"Work Title" by Creator** [1] — Why this fits.
+2. [essay] **"Article Title" by Author** [2] — Why this fits.`;
 }
 
 function buildPrompt(canvasContent: string, vibeContext: string, narrative: string | undefined, interviewAnswers?: InterviewAnswer[], targetedContext?: string): string {
@@ -202,7 +239,7 @@ async function callSonar(
 export async function POST(request: Request) {
   try {
     const body: DiscoverRequestBody = await request.json();
-    const { vibe, references, narrative, interviewAnswers, targetedContext } = body;
+    const { vibe, references, narrative, interviewAnswers, targetedContext, searchQuery } = body;
 
     // Build a full dump of everything on the canvas
     const canvasContent = references.map((ref, i) => {
@@ -227,7 +264,9 @@ export async function POST(request: Request) {
       `Sonic mood: ${vibe.sonic_mood}`,
     ].join("\n");
 
-    const prompt = buildPrompt(canvasContent, vibeContext, narrative, interviewAnswers, targetedContext);
+    const prompt = searchQuery
+      ? buildSearchPrompt(searchQuery, vibeContext, narrative)
+      : buildPrompt(canvasContent, vibeContext, narrative, interviewAnswers, targetedContext);
     const apiKey = process.env.PERPLEXITY_API_KEY!;
 
     // Validate image URLs before sending — HEAD check to see if Sonar can reach them
