@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { DiscoverResponse, InterviewAnswer, SuggestedReference, VibeProfile } from "@/types";
+import type { ContentDomain, DiscoverResponse, InterviewAnswer, SuggestedReference, VibeProfile } from "@/types";
 
 export const maxDuration = 60;
 
@@ -12,14 +12,22 @@ interface DiscoverRequestBody {
   }>;
   narrative?: string;
   interviewAnswers?: InterviewAnswer[];
+  targetedContext?: string;
 }
 
-function buildPrompt(canvasContent: string, vibeContext: string, narrative: string | undefined, interviewAnswers?: InterviewAnswer[]): string {
+function buildPrompt(canvasContent: string, vibeContext: string, narrative: string | undefined, interviewAnswers?: InterviewAnswer[], targetedContext?: string): string {
   const interviewSection = interviewAnswers?.length
     ? `\nTHE USER'S DIRECTION FOR THIS ROUND (they answered these questions to guide your search — weight these heavily):\n${interviewAnswers.map((a) => `Q: "${a.question}" → A: "${a.answer}"${a.context ? ` (context: "${a.context}")` : ""}`).join("\n")}\n`
     : "";
 
-  return `You are an expert cultural researcher and creative curator. A user is building a personal reference collection — a moodboard of images, texts, and links that define their taste. Your job is to search the internet and find specific, real works that belong in this collection.
+  const isTargeted = !!targetedContext;
+  const resultCount = isTargeted ? "4-6" : "6-8";
+
+  const targetedSection = isTargeted
+    ? `\nTARGETED SEARCH: The user has specifically selected these references and wants you to find content that lives at the INTERSECTION of them. Focus on what these specific pieces share — their overlapping themes, cultural lineage, and conceptual connections. Find works that bridge these references.\n`
+    : "";
+
+  return `You are an expert cultural researcher and cross-domain creative curator. A user is building a personal reference collection — a moodboard that spans images, essays, music, video, typography, and visual art. Your job is to search the internet and find specific, real works across MULTIPLE content domains that belong in this collection.
 
 THE ACTUAL CONTENT ON THEIR CANVAS (this is the primary signal — look at what these references actually are, not just abstract labels):
 
@@ -30,18 +38,28 @@ IMPORTANT: The references above are the ground truth of what this collection is 
 Secondary context — an AI-extracted aesthetic profile (use as supplementary color/mood info, but do NOT let abstract labels like "cyberpunk" or "minimalist" override what the actual content shows):
 ${vibeContext}
 
-${narrative ? `A curatorial reading of the collection:\n${narrative}\n` : ""}${interviewSection}
-Find 6-8 specific discoveries that would genuinely expand this collection. Match the ACTUAL SUBJECT MATTER and cultural world of the references, not just abstract aesthetic labels. If someone has club photography and DJ culture on their board, find more from that world — not sci-fi films that happen to share a color palette.
+${narrative ? `A curatorial reading of the collection:\n${narrative}\n` : ""}${interviewSection}${targetedSection}
+Find ${resultCount} specific discoveries across MULTIPLE content domains. You MUST include items from at least 3 different domains. The AI decides the best mix based on what's on the canvas.
+
+CONTENT DOMAINS — search across all of these:
+- **[essay]** Essays & Writing: Long-form pieces, criticism, manifestos, interviews from quality publications (link to the article page)
+- **[music]** Music & Audio: Specific albums, tracks, mixes, radio shows (link to Spotify, Bandcamp, SoundCloud, or YouTube)
+- **[video]** Video & Film: Specific films, video essays, documentaries, short films (link to YouTube, Vimeo, Criterion, or MUBI)
+- **[typography]** Typography: Google Fonts or foundry specimens that match the mood (link to fonts.google.com/specimen/...)
+- **[visual]** Visual Art & Photography: Specific photographs, paintings, installations (link to museum pages, artist sites, galleries)
+- **[image]** Images: Direct image links from quality sources
+
+Match the ACTUAL SUBJECT MATTER and cultural world of the references, not just abstract aesthetic labels.
 
 What makes a good discovery:
 - It belongs in the same cultural world as the existing references
-- A specific work by a specific person — not "check out this artist" but link to THE specific photograph, THE essay, THE building, THE album
+- A specific work by a specific person — not "check out this artist" but link to THE specific photograph, THE essay, THE building, THE album, THE font
 - Something that shares deep thematic DNA with the collection, not just surface color similarity
-- Unexpected cross-domain connections that still feel deeply relevant — a piece of writing about the same culture, a film that captures the same energy, architecture that embodies the same spirit
-- Content from quality sources: museum collections, design archives, literary magazines, film databases, artist portfolios, cultural publications
+- Cross-domain connections that feel deeply relevant — a piece of writing about the same culture, a film that captures the same energy, a typeface that embodies the same spirit, music that shares the mood
+- Content from quality sources: museum collections, design archives, literary magazines, film databases, artist portfolios, cultural publications, Google Fonts
 
 What makes a BAD discovery:
-- Anything that matches the color palette but misses the subject matter entirely (e.g., suggesting Blade Runner for a nightlife collection just because both have neon)
+- Anything that matches the color palette but misses the subject matter entirely
 - Generic platform links (youtube.com homepage, pinterest boards, amazon, etsy)
 - Stock photography or commercial image sites
 - Listicles or "top 10" roundups
@@ -49,33 +67,57 @@ What makes a BAD discovery:
 
 Think like someone who is deeply embedded in the same cultural scene as this collection — not a search engine.
 
-Present each discovery as a numbered list. For each:
+Present each discovery as a numbered list. IMPORTANT: Start each entry with a [domain] tag. For each:
+- Domain tag in brackets
 - Bold the title and creator
 - Cite your source with [N] references
 - One sentence on the specific connection
 
-Example:
-1. **"Work Title" by Creator** [1] — Why this belongs.
-2. **"Another Work" by Another Creator** [2] — Why this belongs.`;
+Example format:
+1. [essay] **"Work Title" by Creator** [1] — Why this belongs.
+2. [music] **"Album Title" by Artist** [2] — Why this belongs.
+3. [video] **"Film Title" directed by Director** [3] — Why this belongs.
+4. [typography] **"Font Name" by Foundry** [4] — Why this belongs.
+5. [visual] **"Artwork Title" by Artist** [5] — Why this belongs.`;
+}
+
+const VALID_DOMAINS: ContentDomain[] = ["essay", "music", "video", "typography", "image", "visual"];
+
+function inferDomainFromUrl(url: string): ContentDomain | undefined {
+  const u = url.toLowerCase();
+  if (u.includes("spotify.com") || u.includes("bandcamp.com") || u.includes("soundcloud.com")) return "music";
+  if (u.includes("youtube.com") || u.includes("vimeo.com") || u.includes("criterion.com") || u.includes("mubi.com")) return "video";
+  if (u.includes("fonts.google.com")) return "typography";
+  return undefined;
 }
 
 function parseDiscoveriesFromText(
   text: string,
   citations: string[],
   searchResults: Array<{ title: string; url: string; snippet?: string }>
-): Array<{ title: string; url: string; why: string }> {
-  const results: Array<{ title: string; url: string; why: string }> = [];
+): Array<{ title: string; url: string; why: string; domain?: ContentDomain }> {
+  const results: Array<{ title: string; url: string; why: string; domain?: ContentDomain }> = [];
 
   // Split by numbered items: "1. ", "2. ", etc.
   const segments = text.split(/(?:^|\n)\s*\d+\.\s+/).filter(Boolean);
 
   for (const segment of segments) {
+    // Extract domain tag: [essay], [music], [video], etc.
+    const domainMatch = segment.match(/^\[(\w+)\]\s*/);
+    let domain: ContentDomain | undefined;
+    if (domainMatch) {
+      const tag = domainMatch[1].toLowerCase();
+      if (VALID_DOMAINS.includes(tag as ContentDomain)) {
+        domain = tag as ContentDomain;
+      }
+    }
+
     // Extract title: text between **...**
     const boldMatch = segment.match(/\*\*(.+?)\*\*/);
     if (!boldMatch) continue;
     const title = boldMatch[1].replace(/^[""]|[""]$/g, "").trim();
 
-    // Extract citation refs: [N] patterns
+    // Extract citation refs: [N] patterns (skip domain tag matches)
     const citationRefs = [...segment.matchAll(/\[(\d+)\]/g)].map(m => parseInt(m[1], 10));
 
     // Get URL from citations (1-indexed: [1] = citations[0])
@@ -101,8 +143,14 @@ function parseDiscoveriesFromText(
     // Skip discoveries without a verified URL
     if (!url) continue;
 
+    // Infer domain from URL if not tagged
+    if (!domain) {
+      domain = inferDomainFromUrl(url);
+    }
+
     // Extract "why": text after the bold title and citation refs
     const why = segment
+      .replace(/^\[(\w+)\]\s*/, "")
       .replace(/\*\*(.+?)\*\*/, "")
       .replace(/\[\d+\]/g, "")
       .replace(/^[\s—–-]+/, "")
@@ -110,7 +158,7 @@ function parseDiscoveriesFromText(
       .split("\n")[0]
       .trim();
 
-    results.push({ title, url, why: why || title });
+    results.push({ title, url, why: why || title, domain });
   }
 
   return results;
@@ -154,7 +202,7 @@ async function callSonar(
 export async function POST(request: Request) {
   try {
     const body: DiscoverRequestBody = await request.json();
-    const { vibe, references, narrative, interviewAnswers } = body;
+    const { vibe, references, narrative, interviewAnswers, targetedContext } = body;
 
     // Build a full dump of everything on the canvas
     const canvasContent = references.map((ref, i) => {
@@ -179,7 +227,7 @@ export async function POST(request: Request) {
       `Sonic mood: ${vibe.sonic_mood}`,
     ].join("\n");
 
-    const prompt = buildPrompt(canvasContent, vibeContext, narrative, interviewAnswers);
+    const prompt = buildPrompt(canvasContent, vibeContext, narrative, interviewAnswers, targetedContext);
     const apiKey = process.env.PERPLEXITY_API_KEY!;
 
     // Validate image URLs before sending — HEAD check to see if Sonar can reach them
@@ -276,6 +324,7 @@ export async function POST(request: Request) {
         title: d.title,
         originUrl: d.url,
         query: d.why,
+        domain: d.domain,
       });
     }
 

@@ -7,7 +7,14 @@ import ReactMarkdown from "react-markdown";
 import { usePatinaStore } from "@/lib/store";
 import type { InterviewQuestion, InterviewAnswer, SuggestedReference } from "@/types";
 
-type DeckState = "idle" | "loading-interview" | "interview" | "searching" | "deck";
+type DeckState = "idle" | "loading-interview" | "interview" | "searching" | "targeted-searching" | "deck";
+
+// Extract Google Font family from a fonts.google.com URL
+function extractFontFamily(url: string): string | null {
+  const match = url.match(/fonts\.google\.com\/specimen\/([^/?#]+)/);
+  if (!match) return null;
+  return decodeURIComponent(match[1]).replace(/\+/g, " ");
+}
 
 export function DiscoveryDeck() {
   const {
@@ -24,6 +31,8 @@ export function DiscoveryDeck() {
     setRelatedQuestions,
     setInterviewAnswers,
     currentBoardId,
+    targetedNodes,
+    clearTargetedNodes,
   } = usePatinaStore();
 
   const [state, setState] = useState<DeckState>("idle");
@@ -50,6 +59,13 @@ export function DiscoveryDeck() {
       setCurrentCard(0);
     }
   }, [currentBoardId]);
+
+  // Watch for targeted discovery trigger from store
+  useEffect(() => {
+    if (targetedNodes.length >= 2) {
+      triggerTargetedDiscovery(targetedNodes);
+    }
+  }, [targetedNodes]);
 
   const referenceCount = nodes.filter((n) =>
     ["image", "text", "url"].includes(n.data.type)
@@ -86,6 +102,7 @@ export function DiscoveryDeck() {
         .filter((n) => ["image", "text", "url"].includes(n.data.type))
         .slice(0, 6);
 
+      const { interviewAnswers: previousAnswers } = usePatinaStore.getState();
       const res = await fetch("/api/discovery-interview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -98,6 +115,7 @@ export function DiscoveryDeck() {
           })),
           narrative: vibeNarrative,
           relatedQuestions,
+          previousAnswers,
         }),
       });
 
@@ -179,6 +197,52 @@ export function DiscoveryDeck() {
       setState("idle");
     } finally {
       setIsDiscovering(false);
+    }
+  };
+
+  const triggerTargetedDiscovery = async (nodeIds: string[]) => {
+    setState("targeted-searching");
+    setIsDiscovering(true);
+
+    try {
+      const selectedNodes = nodes.filter((n) => nodeIds.includes(n.id));
+      const references = selectedNodes.map((n) => ({
+        type: n.data.type as "image" | "text" | "url",
+        content: n.data.content,
+        title: n.data.title,
+      }));
+
+      const res = await fetch("/api/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vibe: compositeVibe,
+          references,
+          narrative: vibeNarrative,
+          targetedContext: "Find content that lives at the intersection of these specific references. Focus on what connects them — shared themes, cultural lineage, and conceptual bridges.",
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.suggestions?.length > 0) {
+          setSuggestedNodes(data.suggestions);
+          setCurrentCard(0);
+          setState("deck");
+        } else {
+          setState("idle");
+        }
+        if (data.relatedQuestions) {
+          setRelatedQuestions(data.relatedQuestions);
+        }
+      } else {
+        setState("idle");
+      }
+    } catch {
+      setState("idle");
+    } finally {
+      setIsDiscovering(false);
+      clearTargetedNodes();
     }
   };
 
@@ -346,8 +410,8 @@ export function DiscoveryDeck() {
             </motion.div>
           )}
 
-          {/* ── Searching ── */}
-          {state === "searching" && (
+          {/* ── Searching (regular + targeted) ── */}
+          {(state === "searching" || state === "targeted-searching") && (
             <motion.div
               key="searching"
               initial={{ opacity: 0 }}
@@ -361,7 +425,7 @@ export function DiscoveryDeck() {
                 style={{ animation: "soft-pulse 1.5s ease-in-out infinite" }}
               />
               <span className="text-[11px] text-muted/50 tracking-wide">
-                searching...
+                {state === "targeted-searching" ? "finding connections..." : "searching..."}
               </span>
             </motion.div>
           )}
@@ -428,11 +492,26 @@ function DiscoveryCard({
   exitDirection: "left" | "up";
   remaining: number;
 }) {
-  const domain = (card.originUrl || card.content || "")
+  const siteDomain = (card.originUrl || card.content || "")
     .replace(/^https?:\/\/(www\.)?/, "")
     .split(/[/?#]/)[0];
 
   const isImage = card.type === "image" && card.content?.startsWith("http");
+  const isTypography = card.domain === "typography";
+  const fontFamily = isTypography ? extractFontFamily(card.originUrl || card.content || "") : null;
+  const vibeNarrative = usePatinaStore((s) => s.vibeNarrative);
+
+  // Dynamically load Google Font for typography cards
+  useEffect(() => {
+    if (!fontFamily) return;
+    const linkId = `gfont-${fontFamily.replace(/\s+/g, "-")}`;
+    if (document.getElementById(linkId)) return;
+    const link = document.createElement("link");
+    link.id = linkId;
+    link.rel = "stylesheet";
+    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontFamily)}:wght@400;700&display=swap`;
+    document.head.appendChild(link);
+  }, [fontFamily]);
 
   return (
     <motion.div
@@ -473,6 +552,27 @@ function DiscoveryCard({
         </div>
       )}
 
+      {/* Typography preview for font cards */}
+      {isTypography && fontFamily && (
+        <div className="px-5 pt-5 pb-2">
+          <p
+            className="text-[16px] text-foreground/70 leading-relaxed"
+            style={{
+              fontFamily: `"${fontFamily}", sans-serif`,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {vibeNarrative || "The quick brown fox jumps over the lazy dog. Typography shapes how we feel before we read a single word."}
+          </p>
+          <p className="text-[10px] font-mono text-muted/40 mt-2">
+            {fontFamily}
+          </p>
+        </div>
+      )}
+
       <div className="p-5">
         {/* Title */}
         {card.title && (
@@ -481,12 +581,22 @@ function DiscoveryCard({
           </div>
         )}
 
-        {/* Domain */}
-        {domain && (
-          <p className="text-[10px] font-mono text-muted/50 mb-3">
-            {domain}
-          </p>
-        )}
+        {/* Domain badge + site domain */}
+        <div className="flex items-center gap-1.5 mb-3">
+          {card.domain && (
+            <span className="text-[9px] uppercase font-mono text-muted/50 tracking-[0.08em]">
+              {card.domain}
+            </span>
+          )}
+          {card.domain && siteDomain && (
+            <span className="text-[9px] text-muted/30">·</span>
+          )}
+          {siteDomain && (
+            <span className="text-[10px] font-mono text-muted/50">
+              {siteDomain}
+            </span>
+          )}
+        </div>
 
         {/* Why */}
         {card.query && (

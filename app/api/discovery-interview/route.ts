@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import type { VibeProfile, InterviewQuestion } from "@/types";
+import type { VibeProfile, InterviewQuestion, InterviewAnswer } from "@/types";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -15,12 +15,13 @@ interface InterviewRequestBody {
   }>;
   narrative?: string;
   relatedQuestions?: string[];
+  previousAnswers?: InterviewAnswer[];
 }
 
 export async function POST(request: Request) {
   try {
     const body: InterviewRequestBody = await request.json();
-    const { vibe, references, narrative, relatedQuestions } = body;
+    const { vibe, references, narrative, relatedQuestions, previousAnswers } = body;
 
     const refSummary = references
       .slice(0, 6)
@@ -34,12 +35,17 @@ export async function POST(request: Request) {
     const vibeContext = `Mood: ${vibe.mood_tags.join(", ")}. Aesthetic: ${vibe.aesthetic_tags.join(", ")}. Colors: ${vibe.color_palette.dominant.slice(0, 3).join(", ")}.`;
 
     const relatedContext = relatedQuestions?.length
-      ? `\nPrevious search suggested these directions:\n${relatedQuestions.map((q, i) => `- ${q}`).join("\n")}\nUse these as seeds but make the questions more specific and provocative.`
+      ? `\nPrevious search suggested these directions:\n${relatedQuestions.map((q) => `- ${q}`).join("\n")}\nUse these as seeds but make the questions more specific and provocative.`
+      : "";
+
+    const previousContext = previousAnswers?.length
+      ? `\nQUESTIONS ALREADY ASKED (do NOT repeat these or ask similar things — push into NEW territory):\n${previousAnswers.map((a) => `- Q: "${a.question}" → They chose: "${a.answer}"${a.context ? ` (added: "${a.context}")` : ""}`).join("\n")}\nBuild on what they revealed but explore completely different angles.`
       : "";
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 400,
+      temperature: 1,
       messages: [
         {
           role: "user",
@@ -49,7 +55,7 @@ Their collection:
 ${refSummary}
 
 Vibe: ${vibeContext}
-${narrative ? `Curatorial reading: ${narrative}` : ""}${relatedContext}
+${narrative ? `Curatorial reading: ${narrative}` : ""}${relatedContext}${previousContext}
 
 Rules:
 - Each question should challenge them to think about WHY they're drawn to what they've collected
@@ -57,6 +63,7 @@ Rules:
 - optionA and optionB should be short (3-8 words), specific, and represent genuinely different creative directions
 - Don't use generic options like "Yes" / "No" — each option should describe a specific direction
 - Make questions feel like a conversation with a sharp curator, not a survey
+- NEVER repeat or rephrase questions that were already asked — always explore fresh angles
 
 Return ONLY valid JSON in this exact format, no other text:
 {"questions": [{"question": "...", "optionA": "...", "optionB": "..."}, {"question": "...", "optionA": "...", "optionB": "..."}, {"question": "...", "optionA": "...", "optionB": "..."}]}`,

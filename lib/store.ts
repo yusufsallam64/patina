@@ -71,6 +71,11 @@ interface PatinaStore {
   relatedQuestions: string[];
   setRelatedQuestions: (questions: string[]) => void;
 
+  // Targeted discovery
+  targetedNodes: string[];
+  triggerTargetedDiscovery: (nodeIds: string[]) => void;
+  clearTargetedNodes: () => void;
+
   // Hidden nodes (dismissed but cached)
   hiddenNodes: PatinaNode[];
   hideNode: (id: string) => void;
@@ -242,7 +247,8 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
     const suggestion = get().suggestedNodes.find((s) => s.id === id);
     if (!suggestion) return;
 
-    const nodeType = suggestion.type === "url" ? "text" : suggestion.type;
+    // Keep url type as-is — URLNode handles metadata fetching and display
+    const nodeType = suggestion.type === "image" ? "image" : suggestion.type === "url" ? "url" : suggestion.type;
     const pos = position || { x: 0, y: 0 };
     const newNode: PatinaNode = {
       id: generateNodeId(),
@@ -252,8 +258,8 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
         type: nodeType as PatinaNodeData["type"],
         content: suggestion.content,
         title: suggestion.title,
-        sourceUrl: suggestion.originUrl,
-        metadata: { originUrl: suggestion.originUrl, query: suggestion.query, fromDiscovery: true },
+        sourceUrl: suggestion.type === "url" ? suggestion.originUrl || suggestion.content : suggestion.originUrl,
+        metadata: { originUrl: suggestion.originUrl, query: suggestion.query, fromDiscovery: true, domain: suggestion.domain },
       },
     };
     set({
@@ -284,6 +290,11 @@ export const usePatinaStore = create<PatinaStore>((set, get) => ({
   setInterviewAnswers: (answers) => set({ interviewAnswers: answers }),
   relatedQuestions: [],
   setRelatedQuestions: (questions) => set({ relatedQuestions: questions }),
+
+  // ── Targeted Discovery ──
+  targetedNodes: [],
+  triggerTargetedDiscovery: (nodeIds) => set({ targetedNodes: nodeIds, suggestedNodes: [] }),
+  clearTargetedNodes: () => set({ targetedNodes: [] }),
 
   // ── Hidden Nodes ──
   hiddenNodes: [],

@@ -33,6 +33,10 @@ export interface PatinaNodeData extends Record<string, unknown> {
   summaryText?: string;
   sourceUrl?: string;
   ogImage?: string;
+  // For embeddable URLs (YouTube, Spotify, etc.)
+  embedHtml?: string;
+  embedProvider?: string;
+  embedThumbnail?: string;
 }
 
 export type PatinaNode = Node<PatinaNodeData>;
@@ -87,6 +91,8 @@ export interface VibeProfile {
 
 // ─── Discovery Types ─────────────────────────────────────────────
 
+export type ContentDomain = "essay" | "music" | "video" | "typography" | "image" | "visual";
+
 export interface SuggestedReference {
   id: string;
   type: "image" | "text" | "url";
@@ -96,6 +102,7 @@ export interface SuggestedReference {
   width?: number;
   height?: number;
   query?: string;
+  domain?: ContentDomain;
 }
 
 // ─── Interview Types ────────────────────────────────────────────

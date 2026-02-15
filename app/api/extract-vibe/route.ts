@@ -9,7 +9,7 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { content, type, ogImage } = body as ExtractVibeRequest & { ogImage?: string };
+    const { content, type, ogImage, title } = body as ExtractVibeRequest & { ogImage?: string; title?: string };
 
     // Build the message based on content type
     const userContent: Anthropic.Messages.ContentBlockParam[] = [];
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
           source: { type: "url", url: ogImage },
         });
       }
-      analysisPrompt = `Analyze this URL as a creative/aesthetic reference and extract its vibe contribution. Consider the brand, the visual preview image${ogImage ? " (shown above)" : ""}, and the page content. Extract colors primarily from the visual appearance. The URL: ${content}`;
+      analysisPrompt = `Analyze this URL as a creative/aesthetic reference and extract its vibe contribution. Consider the brand, the visual preview image${ogImage ? " (shown above)" : ""}, and the page content.${title ? ` Title: "${title}".` : ""} Extract colors primarily from the visual appearance. The URL: ${content}`;
     } else {
       analysisPrompt = `Analyze this text as a creative/aesthetic reference and extract its vibe contribution. The text:\n\n${content}`;
     }
@@ -89,11 +89,28 @@ All numeric values should be realistic CSS filter values.
 sonic_mood should describe tempo, instruments, genre, and feel.`,
     });
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: userContent }],
-    });
+    let response;
+    try {
+      response = await anthropic.messages.create({
+        model: "claude-sonnet-4-5-20250929",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: userContent }],
+      });
+    } catch (err: unknown) {
+      // If image download failed, retry without image blocks
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes("Unable to download") || errMsg.includes("invalid_image") || errMsg.includes("Could not process image")) {
+        console.log("[extract-vibe] Image failed, retrying text-only:", errMsg);
+        const textOnly = userContent.filter((b) => b.type !== "image");
+        response = await anthropic.messages.create({
+          model: "claude-sonnet-4-5-20250929",
+          max_tokens: 1024,
+          messages: [{ role: "user", content: textOnly }],
+        });
+      } else {
+        throw err;
+      }
+    }
 
     // Parse the response
     const text =

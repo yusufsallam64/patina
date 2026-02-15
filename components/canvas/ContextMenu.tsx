@@ -44,7 +44,7 @@ interface ContextMenuProps {
 }
 
 export function ContextMenu({ position, onClose, onRequestGenerateUI }: ContextMenuProps) {
-  const { compositeVibe, nodes, addNode, vibeCache } = usePatinaStore();
+  const { compositeVibe, nodes, addNode, vibeCache, triggerTargetedDiscovery } = usePatinaStore();
   const { screenToFlowPosition } = useReactFlow();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -315,6 +315,18 @@ export function ContextMenu({ position, onClose, onRequestGenerateUI }: ContextM
     }
   }, [compositeVibe, position, screenToFlowPosition, addNode, onClose]);
 
+  // Multi-select: find how many content nodes are selected
+  const selectedContentNodes = nodes.filter(
+    (n) => n.selected && ["image", "text", "url"].includes(n.data.type)
+  );
+  const canFindRelated = selectedContentNodes.length >= 2;
+
+  const handleFindRelated = useCallback(() => {
+    if (!canFindRelated) return;
+    onClose();
+    triggerTargetedDiscovery(selectedContentNodes.map((n) => n.id));
+  }, [canFindRelated, selectedContentNodes, onClose, triggerTargetedDiscovery]);
+
   if (!position) return null;
 
   const hasVibe = !!compositeVibe;
@@ -370,6 +382,22 @@ export function ContextMenu({ position, onClose, onRequestGenerateUI }: ContextM
           label="Generate Text"
           hint={!hasNearbyNodes ? "needs nearby nodes" : undefined}
         />
+      )}
+
+      {/* ── Targeted discovery ── */}
+      {canFindRelated && (
+        <div className="border-t border-border-subtle mt-1 pt-1">
+          <div className="px-3 py-1 text-[9px] font-medium uppercase tracking-[0.14em] text-muted/40 mb-0.5">
+            Discovery
+          </div>
+          <MenuButton
+            onClick={handleFindRelated}
+            disabled={false}
+            icon="⊕"
+            label="Find Related"
+            hint={`${selectedContentNodes.length} selected`}
+          />
+        </div>
       )}
 
       {/* ── Existing vibe-based actions ── */}

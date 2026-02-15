@@ -16,17 +16,103 @@ const nodeEntrance = {
 
 type Tab = "summary" | "original";
 
+const EMBEDDABLE_DOMAINS = [
+  "youtube.com", "youtu.be",
+  "open.spotify.com",
+  "vimeo.com",
+  "soundcloud.com",
+];
+
+function isEmbeddableUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return EMBEDDABLE_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+function isVideoEmbed(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return hostname.includes("youtube.com") || hostname === "youtu.be" || hostname.includes("vimeo.com");
+  } catch {
+    return false;
+  }
+}
+
+function isFontsGoogleUrl(url: string): boolean {
+  return /fonts\.google\.com\/specimen\//i.test(url);
+}
+
+function extractFontFamily(url: string): string | null {
+  const match = url.match(/fonts\.google\.com\/specimen\/([^/?#]+)/i);
+  if (!match) return null;
+  return decodeURIComponent(match[1]).replace(/\+/g, " ");
+}
+
+/** Strip fixed width/height from OEmbed iframe HTML so CSS can control sizing */
+function cleanEmbedHtml(html: string): string {
+  return html
+    .replace(/\s+width=["']\d+["']/gi, "")
+    .replace(/\s+height=["']\d+["']/gi, "")
+    .replace(/<iframe/gi, '<iframe style="width:100%;height:100%;position:absolute;top:0;left:0"');
+}
+
 export function URLNode({ id, data, selected }: NodeProps<PatinaNode>) {
   const vibeCache = usePatinaStore((s) => s.vibeCache);
   const updateNodeData = usePatinaStore((s) => s.updateNodeData);
+  const vibeNarrative = usePatinaStore((s) => s.vibeNarrative);
   const nodeColor = vibeCache[id]?.colors?.[0] || null;
   const isLoading = data.isLoading || !data.content;
 
+  const sourceUrl = data.sourceUrl || data.content || "";
+  const embeddable = isEmbeddableUrl(sourceUrl);
+  const isFontPreview = isFontsGoogleUrl(sourceUrl);
+  const fontFamily = isFontPreview ? extractFontFamily(sourceUrl) : null;
+
   const hasOriginal = !!data.originalText;
   const [activeTab, setActiveTab] = useState<Tab>("summary");
+  const [embedHtml, setEmbedHtml] = useState<string | null>(data.embedHtml || null);
+  const [embedLoading, setEmbedLoading] = useState(false);
+
+  // Fetch OEmbed data for embeddable URLs
+  useEffect(() => {
+    if (!embeddable || embedHtml || !sourceUrl || isLoading) return;
+    setEmbedLoading(true);
+    fetch(`/api/oembed?url=${encodeURIComponent(sourceUrl)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((oembed) => {
+        if (oembed?.html) {
+          setEmbedHtml(oembed.html);
+          updateNodeData(id, {
+            embedHtml: oembed.html,
+            embedProvider: oembed.provider,
+            embedThumbnail: oembed.thumbnail_url || undefined,
+            title: oembed.title || data.title,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setEmbedLoading(false));
+  }, [id, sourceUrl, embeddable, embedHtml, isLoading, updateNodeData, data.title]);
+
+  // Dynamically load Google Font for typography nodes
+  useEffect(() => {
+    if (!fontFamily) return;
+    const linkId = `gfont-node-${fontFamily.replace(/\s+/g, "-")}`;
+    if (document.getElementById(linkId)) return;
+    const link = document.createElement("link");
+    link.id = linkId;
+    link.rel = "stylesheet";
+    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontFamily)}:wght@400;700&display=swap`;
+    document.head.appendChild(link);
+  }, [fontFamily]);
 
   // Fetch metadata for URL nodes missing originalText or ogImage
+  // Skip for embeddable URLs and font previews — they have their own layouts
   useEffect(() => {
+    if (embeddable || isFontPreview) return;
     if (data.sourceUrl && (!data.originalText || !data.ogImage) && !isLoading) {
       fetch("/api/parse-url", {
         method: "POST",
@@ -51,27 +137,9 @@ export function URLNode({ id, data, selected }: NodeProps<PatinaNode>) {
         })
         .catch(() => {});
     }
-  }, [id, data.sourceUrl, data.originalText, data.ogImage, isLoading, data.content, updateNodeData]);
+  }, [id, data.sourceUrl, data.originalText, data.ogImage, isLoading, data.content, updateNodeData, embeddable, isFontPreview]);
 
-  // Text content for summary / original tabs
-  const rawText =
-    activeTab === "original"
-      ? data.originalText || data.content
-      : data.summaryText || data.content;
-
-  const displayText =
-    activeTab === "original" && rawText
-      ? rawText
-          .replace(/([^\n])\n([^\n])/g, "$1\n\n$2")
-          .replace(/\n{3,}/g, "\n\n")
-      : rawText;
-
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "summary", label: "Summary" },
-    ...(hasOriginal ? [{ key: "original" as Tab, label: "Original" }] : []),
-  ];
-
-  return (
+  const nodeShell = (children: React.ReactNode) => (
     <motion.div
       className="patina-node group overflow-hidden"
       data-selected={selected}
@@ -90,7 +158,137 @@ export function URLNode({ id, data, selected }: NodeProps<PatinaNode>) {
       }}
     >
       <DismissButton nodeId={id} />
+      {data.vibeContribution && (
+        <div
+          className="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent z-10"
+          style={{ animation: "soft-pulse 2.5s ease-in-out infinite" }}
+        />
+      )}
+      {children}
+    </motion.div>
+  );
 
+  // ── Embeddable URL mode (YouTube, Spotify, Vimeo, SoundCloud) ──
+  if (embeddable && !isLoading) {
+    return nodeShell(
+      <>
+        {embedHtml ? (
+          <div style={{ position: "relative" }}>
+            {isVideoEmbed(sourceUrl) ? (
+              <div
+                dangerouslySetInnerHTML={{ __html: cleanEmbedHtml(embedHtml) }}
+                style={{ position: "relative", width: "100%", paddingBottom: "56.25%", overflow: "hidden" }}
+              />
+            ) : (
+              <div
+                dangerouslySetInnerHTML={{ __html: cleanEmbedHtml(embedHtml) }}
+                style={{ width: "100%", minHeight: 80 }}
+              />
+            )}
+            {/* Transparent overlay — allows dragging the node. Click-through when selected so user can interact with player */}
+            {!selected && (
+              <div style={{ position: "absolute", inset: 0, zIndex: 1, cursor: "grab" }} />
+            )}
+          </div>
+        ) : embedLoading ? (
+          <div className="flex items-center justify-center py-10">
+            <div
+              className="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full"
+              style={{ animation: "spin 1s linear infinite" }}
+            />
+          </div>
+        ) : null}
+
+        {/* Title + Open link */}
+        <div className="px-4 py-3 flex items-center justify-between gap-2">
+          {data.title && (
+            <p className="text-[10px] text-muted uppercase tracking-[0.08em] truncate font-medium flex-1">
+              {data.title}
+            </p>
+          )}
+          {sourceUrl && (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="nodrag nopan text-[10px] text-muted/40 hover:text-muted/70 transition-colors tracking-wide shrink-0"
+            >
+              Open ↗
+            </a>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // ── Font preview mode (Google Fonts) ──
+  if (isFontPreview && fontFamily && !isLoading) {
+    const sampleText = vibeNarrative || "The quick brown fox jumps over the lazy dog";
+    return nodeShell(
+      <>
+        <div style={{ padding: "20px 24px" }}>
+          <p
+            className="text-foreground/90 leading-tight mb-3"
+            style={{ fontFamily: `"${fontFamily}", sans-serif`, fontSize: 48, fontWeight: 700 }}
+          >
+            Aa
+          </p>
+          <p
+            className="text-foreground/80 leading-relaxed mb-2"
+            style={{ fontFamily: `"${fontFamily}", sans-serif`, fontSize: 16 }}
+          >
+            {sampleText}
+          </p>
+          <p
+            className="text-foreground/60 leading-relaxed"
+            style={{ fontFamily: `"${fontFamily}", sans-serif`, fontSize: 12 }}
+          >
+            ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between" style={{ padding: "0 24px 12px" }}>
+          <p className="text-[10px] text-muted uppercase tracking-[0.08em] font-medium font-mono">
+            {fontFamily}
+          </p>
+          {data.sourceUrl && (
+            <a
+              href={data.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="nodrag nopan text-[10px] text-muted/40 hover:text-muted/70 transition-colors tracking-wide"
+            >
+              Open ↗
+            </a>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // ── Standard URL node (articles, essays, etc.) ──
+
+  const rawText =
+    activeTab === "original"
+      ? data.originalText || data.content
+      : data.summaryText || data.content;
+
+  const displayText =
+    activeTab === "original" && rawText
+      ? rawText
+          .replace(/([^\n])\n([^\n])/g, "$1\n\n$2")
+          .replace(/\n{3,}/g, "\n\n")
+      : rawText;
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "summary", label: "Summary" },
+    ...(hasOriginal ? [{ key: "original" as Tab, label: "Original" }] : []),
+  ];
+
+  return nodeShell(
+    <>
       {isLoading ? (
         <div className="flex flex-col items-center justify-center gap-3 py-10">
           <div
@@ -105,14 +303,6 @@ export function URLNode({ id, data, selected }: NodeProps<PatinaNode>) {
         </div>
       ) : (
         <>
-          {/* Vibe extracted indicator */}
-          {data.vibeContribution && (
-            <div
-              className="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent z-10"
-              style={{ animation: "soft-pulse 2.5s ease-in-out infinite" }}
-            />
-          )}
-
           {/* OG Image card header */}
           {data.ogImage && (
             <div className="relative">
@@ -180,6 +370,6 @@ export function URLNode({ id, data, selected }: NodeProps<PatinaNode>) {
           )}
         </>
       )}
-    </motion.div>
+    </>
   );
 }
