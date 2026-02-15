@@ -1,7 +1,9 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { type NodeProps } from "@xyflow/react";
 import { motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
 import { usePatinaStore } from "@/lib/store";
 import type { PatinaNode } from "@/types";
 import { DismissButton } from "./DismissButton";
@@ -59,8 +61,49 @@ function LinkedText({ text }: { text: string }) {
 
 export function TextNode({ id, data, selected }: NodeProps<PatinaNode>) {
   const vibeCache = usePatinaStore((s) => s.vibeCache);
+  const updateNodeData = usePatinaStore((s) => s.updateNodeData);
   const nodeColor = vibeCache[id]?.colors?.[0] || null;
   const isLoading = data.isLoading || !data.content;
+
+  const hasTabs = !!(data.originalText || data.summaryText);
+  const [activeTab, setActiveTab] = useState<"original" | "summary">("original");
+
+  // Lazy-fetch original text for URL-sourced nodes that don't have it yet
+  useEffect(() => {
+    if (data.sourceUrl && !data.originalText && !isLoading) {
+      fetch("/api/parse-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: data.sourceUrl }),
+      })
+        .then((r) => r.ok ? r.json() : null)
+        .then((meta) => {
+          if (meta) {
+            updateNodeData(id, {
+              originalText: meta.bodyText || meta.text || "",
+              summaryText: meta.text || data.content,
+            });
+          }
+        })
+        .catch(() => {}); // Silent — user still has summary
+    }
+  }, [id, data.sourceUrl, data.originalText, isLoading, data.content, updateNodeData]);
+
+  // Determine what text to show
+  const rawText = hasTabs
+    ? (activeTab === "original"
+        ? (data.originalText || data.content)
+        : (data.summaryText || data.content))
+    : data.content;
+
+  // For original text, ensure paragraphs are separated for readability
+  const displayText = (hasTabs && activeTab === "original" && rawText)
+    ? rawText
+        // Normalize line breaks: convert single newlines between text to double newlines for paragraph spacing
+        .replace(/([^\n])\n([^\n])/g, "$1\n\n$2")
+        // Collapse triple+ newlines to double
+        .replace(/\n{3,}/g, "\n\n")
+    : rawText;
 
   return (
     <motion.div
@@ -100,8 +143,47 @@ export function TextNode({ id, data, selected }: NodeProps<PatinaNode>) {
             />
           )}
 
-          <div className="nodrag-scroll text-[13px] text-foreground/85 leading-[1.65] overflow-y-auto max-h-[300px] tracking-[0.01em] scrollbar-thin">
-            <p><LinkedText text={data.content} /></p>
+          {/* Tab bar — only for URL-sourced nodes */}
+          {hasTabs && (
+            <div className="flex gap-0 mb-2 border-b border-border-subtle/40">
+              <button
+                onClick={() => setActiveTab("original")}
+                className={`nodrag nopan px-3 py-1.5 text-[10px] font-medium tracking-wide transition-colors ${
+                  activeTab === "original"
+                    ? "text-foreground/90 border-b-2"
+                    : "text-muted/50 hover:text-muted/80"
+                }`}
+                style={activeTab === "original" ? { borderColor: nodeColor || "var(--accent)" } : {}}
+              >
+                Original
+              </button>
+              <button
+                onClick={() => setActiveTab("summary")}
+                className={`nodrag nopan px-3 py-1.5 text-[10px] font-medium tracking-wide transition-colors ${
+                  activeTab === "summary"
+                    ? "text-foreground/90 border-b-2"
+                    : "text-muted/50 hover:text-muted/80"
+                }`}
+                style={activeTab === "summary" ? { borderColor: nodeColor || "var(--accent)" } : {}}
+              >
+                Summary
+              </button>
+              {data.sourceUrl && (
+                <a
+                  href={data.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="nodrag nopan ml-auto px-2 py-1.5 text-[10px] text-muted/40 hover:text-muted/70 transition-colors tracking-wide"
+                >
+                  Source
+                </a>
+              )}
+            </div>
+          )}
+
+          <div className="nodrag-scroll text-[13px] text-foreground/85 leading-[1.65] overflow-y-auto max-h-[300px] tracking-[0.01em] scrollbar-thin prose-node">
+            <ReactMarkdown>{displayText}</ReactMarkdown>
           </div>
 
           {data.title && (

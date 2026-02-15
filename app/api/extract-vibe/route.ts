@@ -8,8 +8,8 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
-    const body: ExtractVibeRequest = await request.json();
-    const { content, type } = body;
+    const body = await request.json();
+    const { content, type, ogImage } = body as ExtractVibeRequest & { ogImage?: string };
 
     // Build the message based on content type
     const userContent: Anthropic.Messages.ContentBlockParam[] = [];
@@ -48,7 +48,14 @@ export async function POST(request: Request) {
         ? "Analyze this image as a creative/aesthetic reference and extract its vibe contribution."
         : `Analyze this image URL as a creative/aesthetic reference and extract its vibe contribution. The URL: ${content}`;
     } else if (type === "url") {
-      analysisPrompt = `Analyze this URL as a creative/aesthetic reference and extract its vibe contribution. Consider the brand, the name, and what this site likely looks and feels like. The URL: ${content}`;
+      // If we have an og:image, include it so Claude can extract colors from the actual visual
+      if (ogImage && ogImage.startsWith("https://")) {
+        userContent.push({
+          type: "image",
+          source: { type: "url", url: ogImage },
+        });
+      }
+      analysisPrompt = `Analyze this URL as a creative/aesthetic reference and extract its vibe contribution. Consider the brand, the visual preview image${ogImage ? " (shown above)" : ""}, and the page content. Extract colors primarily from the visual appearance. The URL: ${content}`;
     } else {
       analysisPrompt = `Analyze this text as a creative/aesthetic reference and extract its vibe contribution. The text:\n\n${content}`;
     }

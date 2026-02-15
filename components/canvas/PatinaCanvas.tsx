@@ -12,25 +12,25 @@ import {
 } from "@xyflow/react";
 import { usePatinaStore } from "@/lib/store";
 import { useVibeExtraction } from "@/hooks/useVibeExtraction";
-import { useDiscovery } from "@/hooks/useDiscovery";
 import { classifyContent } from "@/lib/classify";
 import { ImageNode } from "@/components/nodes/ImageNode";
 import { TextNode } from "@/components/nodes/TextNode";
-import { SuggestedNode } from "@/components/nodes/SuggestedNode";
 import { CodeNode } from "@/components/nodes/CodeNode";
 import { MusicNode } from "@/components/nodes/MusicNode";
+import { URLNode } from "@/components/nodes/URLNode";
 import { ContextMenu } from "@/components/canvas/ContextMenu";
 import { EmptyCanvas } from "@/components/canvas/EmptyCanvas";
 import { GlowCanvas } from "@/components/canvas/GlowCanvas";
 import { EnergyField } from "@/components/canvas/EnergyField";
+import { DiscoveryDeck } from "@/components/discovery/DiscoveryDeck";
 import type { PatinaNodeType } from "@/types";
 
 const nodeTypes: NodeTypes = {
   image: ImageNode,
   text: TextNode,
-  suggested: SuggestedNode,
   code: CodeNode,
   music: MusicNode,
+  url: URLNode,
 };
 
 /** Upload a File to DO Spaces via our API route, returns CDN URL */
@@ -44,7 +44,7 @@ async function uploadFile(file: File): Promise<string> {
 }
 
 /** Parse a URL server-side to get metadata */
-async function parseUrl(url: string): Promise<{ title: string; description: string; text?: string; ogImage?: string }> {
+async function parseUrl(url: string): Promise<{ title: string; description: string; text?: string; bodyText?: string; ogImage?: string }> {
   const res = await fetch("/api/parse-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -69,8 +69,10 @@ function blendWithBase(hex: string, alpha: number): string {
 }
 
 function PatinaCanvasInner() {
-  const { nodes, onNodesChange, addNode, compositeVibe } =
+  const { nodes: rawNodes, onNodesChange, addNode, compositeVibe } =
     usePatinaStore();
+  // Filter out legacy "suggested" nodes that no longer have a renderer
+  const nodes = rawNodes.filter((n) => n.type !== "suggested");
   const { screenToFlowPosition, getViewport } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -87,9 +89,6 @@ function PatinaCanvasInner() {
 
   // Trigger vibe extraction for new nodes, recompute composite
   useVibeExtraction();
-
-  // Trigger ambient discovery via Perplexity
-  useDiscovery();
 
   // Dynamic background tint from vibe palette
   const canvasBg = useMemo(() => {
@@ -119,7 +118,7 @@ function PatinaCanvasInner() {
     ) => {
       addNode(
         {
-          type: type === "url" ? "text" : type, // use "text" node renderer until we build a URL node
+          type,
           content,
           title: extra?.title,
         },
@@ -157,29 +156,44 @@ function PatinaCanvasInner() {
         // Direct image URL — use as-is
         addContentNode("image", classified.content, position);
       } else if (classified.type === "url") {
+        // Create placeholder node immediately so the user sees something
+        const placeholderId = addNode(
+          {
+            type: "url",
+            content: "",
+            title: classified.content,
+            isLoading: true,
+            sourceUrl: classified.content,
+          },
+          position
+        );
+
         // Parse the URL to get metadata + page content
-        const meta = await parseUrl(classified.content);
-        const ogIsImage =
-          meta.ogImage &&
-          /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(meta.ogImage) &&
-          meta.ogImage.startsWith("https://"); // Only use HTTPS og:images
-        if (ogIsImage && meta.ogImage) {
-          addContentNode("image", meta.ogImage, position, { title: meta.title });
-        } else {
-          // Use actual page text for richer vibe extraction, fall back to description
+        try {
+          const meta = await parseUrl(classified.content);
+          const { updateNodeData } = usePatinaStore.getState();
           const content = meta.text || meta.description || classified.content;
-          addContentNode(
-            "url",
+          updateNodeData(placeholderId, {
             content,
-            position,
-            { title: meta.title || classified.content }
-          );
+            title: meta.title || classified.content,
+            isLoading: false,
+            originalText: meta.bodyText || undefined,
+            summaryText: meta.text || undefined,
+            ogImage: meta.ogImage || undefined,
+          });
+        } catch {
+          const { updateNodeData } = usePatinaStore.getState();
+          updateNodeData(placeholderId, {
+            content: classified.content,
+            title: "Failed to load",
+            isLoading: false,
+          });
         }
       } else {
         addContentNode("text", classified.content, position);
       }
     },
-    [addContentNode]
+    [addContentNode, addNode]
   );
 
   // ── Drop Handler ──
@@ -545,6 +559,7 @@ export function PatinaCanvas() {
   return (
     <ReactFlowProvider>
       <PatinaCanvasInner />
+      <DiscoveryDeck />
     </ReactFlowProvider>
   );
 }

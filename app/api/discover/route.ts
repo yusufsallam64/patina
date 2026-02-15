@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { DiscoverResponse, SuggestedReference, VibeProfile } from "@/types";
+import type { DiscoverResponse, InterviewAnswer, SuggestedReference, VibeProfile } from "@/types";
 
 export const maxDuration = 60;
 
@@ -11,32 +11,14 @@ interface DiscoverRequestBody {
     title?: string;
   }>;
   narrative?: string;
+  interviewAnswers?: InterviewAnswer[];
 }
 
-// Schema for structured Sonar output
-const SUGGESTION_SCHEMA = {
-  type: "object" as const,
-  properties: {
-    discoveries: {
-      type: "array" as const,
-      items: {
-        type: "object" as const,
-        properties: {
-          title: { type: "string" as const, description: "The specific name of the work, piece, article, or project" },
-          creator: { type: "string" as const, description: "The artist, author, designer, director, or creator" },
-          url: { type: "string" as const, description: "A direct URL to this specific work — not a homepage or platform" },
-          image_url: { type: "string" as const, description: "A direct image URL if this is a visual work, or an illustrative image" },
-          why: { type: "string" as const, description: "One sentence on the specific connection to this collection — not a generic description" },
-          domain: { type: "string" as const, description: "The domain this comes from: visual art, photography, literature, essay, film, architecture, music, design, philosophy, fashion, or other" },
-        },
-        required: ["title", "creator", "url", "why", "domain"],
-      },
-    },
-  },
-  required: ["discoveries"],
-};
+function buildPrompt(canvasContent: string, vibeContext: string, narrative: string | undefined, interviewAnswers?: InterviewAnswer[]): string {
+  const interviewSection = interviewAnswers?.length
+    ? `\nTHE USER'S DIRECTION FOR THIS ROUND (they answered these questions to guide your search — weight these heavily):\n${interviewAnswers.map((a) => `Q: "${a.question}" → A: "${a.answer}"${a.context ? ` (context: "${a.context}")` : ""}`).join("\n")}\n`
+    : "";
 
-function buildPrompt(canvasContent: string, vibeContext: string, narrative: string | undefined): string {
   return `You are an expert cultural researcher and creative curator. A user is building a personal reference collection — a moodboard of images, texts, and links that define their taste. Your job is to search the internet and find specific, real works that belong in this collection.
 
 THE ACTUAL CONTENT ON THEIR CANVAS (this is the primary signal — look at what these references actually are, not just abstract labels):
@@ -48,7 +30,7 @@ IMPORTANT: The references above are the ground truth of what this collection is 
 Secondary context — an AI-extracted aesthetic profile (use as supplementary color/mood info, but do NOT let abstract labels like "cyberpunk" or "minimalist" override what the actual content shows):
 ${vibeContext}
 
-${narrative ? `A curatorial reading of the collection:\n${narrative}\n` : ""}
+${narrative ? `A curatorial reading of the collection:\n${narrative}\n` : ""}${interviewSection}
 Find 6-8 specific discoveries that would genuinely expand this collection. Match the ACTUAL SUBJECT MATTER and cultural world of the references, not just abstract aesthetic labels. If someone has club photography and DJ culture on their board, find more from that world — not sci-fi films that happen to share a color palette.
 
 What makes a good discovery:
@@ -65,7 +47,73 @@ What makes a BAD discovery:
 - Listicles or "top 10" roundups
 - Broad category pages instead of specific works
 
-For visual works, always include a direct image URL. Think like someone who is deeply embedded in the same cultural scene as this collection — not a search engine.`;
+Think like someone who is deeply embedded in the same cultural scene as this collection — not a search engine.
+
+Present each discovery as a numbered list. For each:
+- Bold the title and creator
+- Cite your source with [N] references
+- One sentence on the specific connection
+
+Example:
+1. **"Work Title" by Creator** [1] — Why this belongs.
+2. **"Another Work" by Another Creator** [2] — Why this belongs.`;
+}
+
+function parseDiscoveriesFromText(
+  text: string,
+  citations: string[],
+  searchResults: Array<{ title: string; url: string; snippet?: string }>
+): Array<{ title: string; url: string; why: string }> {
+  const results: Array<{ title: string; url: string; why: string }> = [];
+
+  // Split by numbered items: "1. ", "2. ", etc.
+  const segments = text.split(/(?:^|\n)\s*\d+\.\s+/).filter(Boolean);
+
+  for (const segment of segments) {
+    // Extract title: text between **...**
+    const boldMatch = segment.match(/\*\*(.+?)\*\*/);
+    if (!boldMatch) continue;
+    const title = boldMatch[1].replace(/^[""]|[""]$/g, "").trim();
+
+    // Extract citation refs: [N] patterns
+    const citationRefs = [...segment.matchAll(/\[(\d+)\]/g)].map(m => parseInt(m[1], 10));
+
+    // Get URL from citations (1-indexed: [1] = citations[0])
+    let url: string | undefined;
+    for (const ref of citationRefs) {
+      const idx = ref - 1;
+      if (idx >= 0 && idx < citations.length && citations[idx]) {
+        url = citations[idx];
+        break;
+      }
+    }
+
+    // Fallback: match title against search_results
+    if (!url) {
+      const titleLower = title.toLowerCase();
+      const match = searchResults.find(r =>
+        r.title.toLowerCase().includes(titleLower) ||
+        titleLower.includes(r.title.toLowerCase())
+      );
+      if (match) url = match.url;
+    }
+
+    // Skip discoveries without a verified URL
+    if (!url) continue;
+
+    // Extract "why": text after the bold title and citation refs
+    const why = segment
+      .replace(/\*\*(.+?)\*\*/, "")
+      .replace(/\[\d+\]/g, "")
+      .replace(/^[\s—–-]+/, "")
+      .trim()
+      .split("\n")[0]
+      .trim();
+
+    results.push({ title, url, why: why || title });
+  }
+
+  return results;
 }
 
 async function callSonar(
@@ -82,15 +130,10 @@ async function callSonar(
       model: "sonar-pro",
       messages: [{ role: "user", content: messageContent }],
       return_images: true,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          schema: SUGGESTION_SCHEMA,
-          name: "discoveries",
-        },
-      },
+      return_related_questions: true,
       web_search_options: {
         search_context_size: "high",
+        search_type: "pro",
         image_results_enhanced_relevance: true,
       },
       search_domain_filter: [
@@ -111,7 +154,7 @@ async function callSonar(
 export async function POST(request: Request) {
   try {
     const body: DiscoverRequestBody = await request.json();
-    const { vibe, references, narrative } = body;
+    const { vibe, references, narrative, interviewAnswers } = body;
 
     // Build a full dump of everything on the canvas
     const canvasContent = references.map((ref, i) => {
@@ -136,7 +179,7 @@ export async function POST(request: Request) {
       `Sonic mood: ${vibe.sonic_mood}`,
     ].join("\n");
 
-    const prompt = buildPrompt(canvasContent, vibeContext, narrative);
+    const prompt = buildPrompt(canvasContent, vibeContext, narrative, interviewAnswers);
     const apiKey = process.env.PERPLEXITY_API_KEY!;
 
     // Validate image URLs before sending — HEAD check to see if Sonar can reach them
@@ -207,6 +250,7 @@ export async function POST(request: Request) {
     const citations: string[] = data.citations || [];
     const searchResults: Array<{ title: string; url: string; snippet?: string }> = data.search_results || [];
     const images: Array<{ image_url?: string; imageUrl?: string; origin_url?: string; originUrl?: string; height?: number; width?: number }> = data.images || [];
+    const relatedQuestions: string[] = data.related_questions || [];
 
     console.log("[discover] Sonar response:", {
       textLength: text.length,
@@ -220,37 +264,19 @@ export async function POST(request: Request) {
 
     const suggestions: SuggestedReference[] = [];
 
-    // Parse the structured JSON response
-    try {
-      const parsed = typeof text === "string" ? JSON.parse(text) : text;
-      const discoveries: Array<{
-        title?: string;
-        creator?: string;
-        url?: string;
-        image_url?: string;
-        why?: string;
-        domain?: string;
-      }> = parsed.discoveries || [];
+    // Parse free-text response with citation references
+    const discoveries = parseDiscoveriesFromText(text, citations, searchResults);
+    console.log("[discover] Parsed", discoveries.length, "discoveries from text:", discoveries.map(d => `${d.title} → ${d.url}`));
 
-      console.log("[discover] Parsed", discoveries.length, "structured discoveries:", discoveries.map(d => `${d.domain}: ${d.title} by ${d.creator}`));
-
-      for (const d of discoveries) {
-        if (!d.title || !d.url) continue;
-
-        const isVisual = d.image_url || ["visual art", "photography", "design", "architecture", "fashion"].includes(d.domain || "");
-
-        suggestions.push({
-          id: `suggestion-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          type: isVisual && d.image_url ? "image" : d.domain === "literature" || d.domain === "essay" || d.domain === "philosophy" ? "text" : "url",
-          content: isVisual && d.image_url ? d.image_url : d.url,
-          title: d.creator ? `${d.title} — ${d.creator}` : d.title,
-          originUrl: d.url,
-          query: d.why,
-        });
-      }
-    } catch (parseErr) {
-      console.error("[discover] Failed to parse structured response:", parseErr);
-      console.log("[discover] Raw text:", text.slice(0, 1000));
+    for (const d of discoveries) {
+      suggestions.push({
+        id: `suggestion-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        type: "url",
+        content: d.url,
+        title: d.title,
+        originUrl: d.url,
+        query: d.why,
+      });
     }
 
     // Add images from Sonar's image search
@@ -301,7 +327,7 @@ export async function POST(request: Request) {
 
     console.log("[discover] Final suggestions:", deduped.length, deduped.map(s => `${s.type}: ${s.title || s.content.slice(0, 60)}`));
 
-    return NextResponse.json({ suggestions: deduped } satisfies DiscoverResponse);
+    return NextResponse.json({ suggestions: deduped, relatedQuestions } satisfies DiscoverResponse);
   } catch (error) {
     console.error("[discover] Error:", error);
     return NextResponse.json(

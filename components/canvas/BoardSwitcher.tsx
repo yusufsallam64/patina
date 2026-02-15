@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { usePatinaStore, type BoardMeta } from "@/lib/store";
 
 export function BoardSwitcher() {
@@ -13,7 +13,10 @@ export function BoardSwitcher() {
     renameBoard,
     saveCurrentBoard,
     loadBoardList,
+    compositeVibe,
   } = usePatinaStore();
+
+  const dotColor = compositeVibe?.color_palette?.dominant?.[0] || "var(--accent)";
 
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -85,8 +88,8 @@ export function BoardSwitcher() {
         className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl glass-panel hover:border-border transition-all duration-200 group"
       >
         <span
-          className="w-[6px] h-[6px] rounded-full bg-accent"
-          style={{ boxShadow: "0 0 6px var(--accent-glow-strong)" }}
+          className="w-[6px] h-[6px] rounded-full"
+          style={{ backgroundColor: dotColor, boxShadow: `0 0 6px ${dotColor}40` }}
         />
         <span className="text-[12px] tracking-[0.02em] text-foreground/80 group-hover:text-foreground truncate max-w-[160px] transition-colors">
           {currentBoard?.name || "Board"}

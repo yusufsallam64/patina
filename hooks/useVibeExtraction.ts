@@ -37,11 +37,14 @@ export function useVibeExtraction() {
       }
       // Skip nodes with no content
       if (!node.data.content) continue;
+      // For URL nodes, wait until ogImage has been fetched (or confirmed missing)
+      // so we can include it in vibe extraction
+      if (node.data.type === "url" && node.data.sourceUrl && !node.data.ogImage && !node.data.originalText) continue;
 
       extractingRef.current.add(id);
       setIsExtracting(true);
 
-      extractVibe(node.data.content, node.data.type as "image" | "text" | "url")
+      extractVibe(node.data.content, node.data.type as "image" | "text" | "url", node.data.ogImage)
         .then((contribution) => {
           if (contribution) {
             setVibeContribution(id, contribution);
@@ -64,19 +67,25 @@ export function useVibeExtraction() {
   useEffect(() => {
     const contributions = computeWeightedContributions(nodes, vibeCache);
     const merged = mergeVibeContributions(contributions);
-    setCompositeVibe(merged!);
+    // Only overwrite compositeVibe when we actually have contributions.
+    // Otherwise we'd clobber a valid compositeVibe loaded from localStorage
+    // before the per-node extraction API calls have finished.
+    if (merged) {
+      setCompositeVibe(merged);
+    }
   }, [nodes, vibeCache, setCompositeVibe]);
 }
 
 /** Call the extract-vibe API route */
 async function extractVibe(
   content: string,
-  type: "image" | "text" | "url"
+  type: "image" | "text" | "url",
+  ogImage?: string
 ): Promise<VibeContribution | null> {
   const res = await fetch("/api/extract-vibe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, type }),
+    body: JSON.stringify({ content, type, ogImage }),
   });
 
   if (!res.ok) {

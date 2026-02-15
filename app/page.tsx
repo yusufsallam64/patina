@@ -1,24 +1,20 @@
 "use client";
 
 import { PatinaCanvas } from "@/components/canvas/PatinaCanvas";
-import { VibePanel } from "@/components/vibe/VibePanel";
+import { VibeStrip, VibePalette } from "@/components/vibe/VibeStrip";
 import { BoardSwitcher } from "@/components/canvas/BoardSwitcher";
+import { HiddenNodesBadge } from "@/components/discovery/HiddenNodesBadge";
 
 export default function Home() {
   return (
-    <div className="h-screen w-screen flex">
-      {/* Main canvas area */}
-      <div className="flex-1 relative">
-        {/* Top bar */}
-        <div className="absolute top-3 left-3 z-10">
-          <BoardSwitcher />
-        </div>
-
-        <PatinaCanvas />
+    <div className="h-screen w-screen relative">
+      <PatinaCanvas />
+      <div className="absolute top-3 left-3 z-[40] flex items-center gap-3">
+        <BoardSwitcher />
+        <VibePalette />
+        <HiddenNodesBadge />
       </div>
-
-      {/* Vibe panel sidebar */}
-      <VibePanel />
+      <VibeStrip />
     </div>
   );
 }

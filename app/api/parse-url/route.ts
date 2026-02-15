@@ -96,6 +96,7 @@ ${bodyText.slice(0, 12000)}`,
       title,
       description,
       text,
+      bodyText: bodyText.slice(0, 8000),
       images,
       ogImage,
     } satisfies ParseUrlResponse);

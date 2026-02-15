@@ -57,6 +57,11 @@ body {
   to { transform: rotate(360deg); }
 }
 
+@keyframes deck-card-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ─── Luminous Node Edges ─────────────────────────────────────── */
 .patina-node {
   position: relative;
@@ -178,4 +183,65 @@ body {
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: var(--border-subtle);
   border-radius: 3px;
+}
+
+/* ─── Markdown Prose Styles ──────────────────────────────────── */
+
+/* Inline markdown: renders inline, no block margins */
+.prose-inline p { display: inline; }
+.prose-inline strong { font-weight: 600; color: var(--foreground); }
+.prose-inline em { font-style: italic; }
+.prose-inline code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-hover);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.prose-inline a {
+  color: color-mix(in oklch, var(--accent) 70%, var(--foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklch, var(--accent) 30%, transparent);
+}
+.prose-inline a:hover { text-decoration-color: var(--accent); }
+
+/* Node markdown: block-level with spacing */
+.prose-node p { margin-bottom: 0.5em; }
+.prose-node p:last-child { margin-bottom: 0; }
+.prose-node strong { font-weight: 600; color: var(--foreground); }
+.prose-node em { font-style: italic; }
+.prose-node code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-hover);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.prose-node a {
+  color: color-mix(in oklch, var(--accent) 70%, var(--foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklch, var(--accent) 30%, transparent);
+}
+.prose-node a:hover { text-decoration-color: var(--accent); }
+.prose-node ul, .prose-node ol {
+  padding-left: 1.2em;
+  margin-bottom: 0.5em;
+}
+.prose-node li { margin-bottom: 0.2em; }
+.prose-node h1, .prose-node h2, .prose-node h3 {
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 0.4em;
+  margin-top: 0.6em;
+}
+.prose-node h1 { font-size: 1.1em; }
+.prose-node h2 { font-size: 1.05em; }
+.prose-node h3 { font-size: 1em; }
+.prose-node blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.8em;
+  color: var(--muted);
+  margin: 0.5em 0;
 }

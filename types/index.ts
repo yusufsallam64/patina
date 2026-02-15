@@ -28,6 +28,11 @@ export interface PatinaNodeData extends Record<string, unknown> {
   title?: string;
   // Loading state for placeholder nodes
   isLoading?: boolean;
+  // For URL / text nodes created from URLs
+  originalText?: string;
+  summaryText?: string;
+  sourceUrl?: string;
+  ogImage?: string;
 }
 
 export type PatinaNode = Node<PatinaNodeData>;
@@ -93,6 +98,20 @@ export interface SuggestedReference {
   query?: string;
 }
 
+// ─── Interview Types ────────────────────────────────────────────
+
+export interface InterviewQuestion {
+  question: string;
+  optionA: string;
+  optionB: string;
+}
+
+export interface InterviewAnswer {
+  question: string;
+  answer: string;
+  context?: string;
+}
+
 // ─── API Request/Response Types ──────────────────────────────────
 
 export interface ExtractVibeRequest {
@@ -122,6 +141,7 @@ export interface DiscoverRequest {
 
 export interface DiscoverResponse {
   suggestions: SuggestedReference[];
+  relatedQuestions?: string[];
 }
 
 export interface StyleTransferRequest {
@@ -164,6 +184,7 @@ export interface ParseUrlResponse {
   title: string;
   description: string;
   text: string;
+  bodyText: string;
   images: string[];
   ogImage?: string;
 }
