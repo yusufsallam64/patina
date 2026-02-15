@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Patina
+
+**A creative canvas that analyzes your aesthetic taste as you curate, then searches, discovers, and gives you more content to explore.**
+
+Patina is an infinite canvas mood board where every reference you add contributes to a living "vibe profile." Drop in images, paste URLs to articles or portfolios, embed YouTube videos and Spotify tracks, preview Google Fonts, or type raw text. Each piece gets analyzed by Claude to extract its aesthetic DNA — colors, mood, texture, and sonic qualities — and the system continuously recomputes a composite vibe from all your references, weighted by spatial proximity on the canvas.
+
+That composite vibe powers vibe-aware discovery (cross-domain suggestions via Perplexity Sonar Pro), vibe-aware search (web results filtered through your board's aesthetic), deep interviews (targeted questions to refine creative intent), style guide generation (color palettes, typography, CSS variables, design tokens), and inline embeddable media. Spatial positioning matters — works influence each other based on proximity, adding another layer of depth to curation.
+
+Discovery shouldn't be the bottleneck; developing your taste is.
+
+## Tech Stack
+
+- **Next.js 16** with App Router and API routes
+- **React 19** + **XYFlow (React Flow)** for the infinite canvas
+- **Zustand** for state management with localStorage persistence
+- **Framer Motion** for animations, **Tailwind CSS v4** for styling
+- **Claude (Anthropic API)** — vibe extraction, style guide generation, discovery interviews, vibe narratives
+- **Perplexity Sonar Pro API** — cross-domain vibe-aware web search and discovery
+- **Cheerio** for server-side URL metadata parsing, **OEmbed** for media embeds
+- **TypeScript** throughout, deployed on **Vercel**
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to see the canvas.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+You'll need the following environment variables:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+ANTHROPIC_API_KEY=
+PERPLEXITY_API_KEY=
+```
